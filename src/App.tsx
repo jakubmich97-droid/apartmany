@@ -9,6 +9,7 @@ import {
   CircleAlert,
   LogOut,
   Plus,
+  Pencil,
   ReceiptText,
   Trash2,
   Users,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react'
 import {
   addMonths,
+  addWeeks,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -27,6 +29,7 @@ import {
   startOfMonth,
   startOfWeek,
   subMonths,
+  subWeeks,
 } from 'date-fns'
 import { cs } from 'date-fns/locale'
 import type { Session } from '@supabase/supabase-js'
@@ -57,7 +60,8 @@ function App() {
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured)
   const [page, setPage] = useState<Page>('calendar')
   const [modal, setModal] = useState<Modal>(null)
-  const [month, setMonth] = useState(startOfMonth(new Date()))
+  const [calendarDate, setCalendarDate] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [apartments, setApartments] = useState<Apartment[]>(isSupabaseConfigured ? [] : demoApartments)
   const [bookings, setBookings] = useState<Booking[]>(isSupabaseConfigured ? [] : bookingDemo)
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -138,6 +142,25 @@ function App() {
     }
   }
 
+  async function update(table: string, id: string, payload: Record<string, unknown>): Promise<string | null> {
+    if (!supabase) {
+      if (table === 'bookings') setBookings((items) => items.map((item) => item.id === id ? { ...item, ...payload } as Booking : item))
+      return null
+    }
+    const { error: updateError } = await supabase.from(table).update(payload).eq('id', id)
+    if (updateError) {
+      setError(updateError.message)
+      return updateError.message
+    }
+    await loadData()
+    return null
+  }
+
+  function closeModal() {
+    setModal(null)
+    setEditingBooking(null)
+  }
+
   if (!authReady) return <div className="center-state">Načítám…</div>
   if (isSupabaseConfigured && !session) return <Login />
 
@@ -165,19 +188,19 @@ function App() {
       <main>
         <header className="topbar">
           <div><p className="eyebrow">SPRÁVA UBYTOVÁNÍ</p><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
-          <button className="primary" onClick={() => setModal(addKind)}><Plus size={18} /> Přidat {addLabel}</button>
+          <button className="primary" onClick={() => { setEditingBooking(null); setModal(addKind) }}><Plus size={18} /> Přidat {addLabel}</button>
         </header>
         {error && <div className="error"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {loading ? <div className="center-state">Načítám data…</div> : (
           <>
-            {page === 'calendar' && <CalendarPage month={month} setMonth={setMonth} apartments={apartments} bookings={bookings} remove={remove} />}
+            {page === 'calendar' && <CalendarPage week={calendarDate} setWeek={setCalendarDate} apartments={apartments} bookings={bookings} remove={remove} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
             {page === 'inventory' && <InventoryPage inventory={inventory} apartments={apartments} remove={remove} changeQuantity={changeInventory} onAddApartment={() => setModal('apartment')} />}
           </>
         )}
       </main>
-      {modal && <EntryModal kind={modal} apartments={apartments} onClose={() => setModal(null)} onInsert={insert} demoAdd={(kind, value) => {
+      {modal && <EntryModal kind={modal} apartments={apartments} editingBooking={editingBooking} onClose={closeModal} onInsert={insert} onUpdate={update} demoAdd={(kind, value) => {
         if (kind === 'booking') setBookings((v) => [...v, value as Booking])
         if (kind === 'expense') setExpenses((v) => [value as Expense, ...v])
         if (kind === 'inventory') setInventory((v) => [...v, value as InventoryItem])
@@ -205,25 +228,26 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return <button className={active ? 'nav-active' : ''} onClick={onClick}>{icon}{label}</button>
 }
 
-function CalendarPage({ month, setMonth, apartments, bookings, remove }: { month: Date; setMonth: (d: Date) => void; apartments: Apartment[]; bookings: Booking[]; remove: (table: string, id: string) => void }) {
-  const days = eachDayOfInterval({ start: startOfWeek(startOfMonth(month), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(month), { weekStartsOn: 1 }) })
-  const visible = bookings.filter((b) => parseISO(b.date_from) <= endOfMonth(month) && parseISO(b.date_to) >= startOfMonth(month))
+function CalendarPage({ week, setWeek, apartments, bookings, remove, onEdit }: { week: Date; setWeek: (d: Date) => void; apartments: Apartment[]; bookings: Booking[]; remove: (table: string, id: string) => void; onEdit: (booking: Booking) => void }) {
+  const weekStart = startOfWeek(week, { weekStartsOn: 1 })
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+  const days = eachDayOfInterval({ start: weekStart, end: weekEnd })
+  const visible = bookings.filter((b) => parseISO(b.date_from) <= weekEnd && parseISO(b.date_to) >= weekStart)
   const guestTotal = visible.reduce((sum, b) => sum + b.guest_count, 0)
   return <div className="content-stack">
     <section className="stats-grid">
-      <Stat icon={<CalendarDays />} label="Pobytů tento měsíc" value={String(visible.length)} />
+      <Stat icon={<CalendarDays />} label="Pobytů tento týden" value={String(visible.length)} />
       <Stat icon={<Users />} label="Hostů celkem" value={String(guestTotal)} />
       <Stat icon={<BedDouble />} label="Obsazených nocí" value={String(visible.reduce((sum, b) => sum + nights(b.date_from, b.date_to), 0))} />
     </section>
     <section className="panel calendar-panel">
-      <div className="panel-head"><div><h2>{format(month, 'LLLL yyyy', { locale: cs })}</h2><div className="legend">{apartments.map((a) => <span key={a.id}><i style={{ background: a.color }} />{a.name}</span>)}</div></div><div className="month-controls"><button onClick={() => setMonth(subMonths(month, 1))}><ChevronLeft /></button><button onClick={() => setMonth(startOfMonth(new Date()))}>Dnes</button><button onClick={() => setMonth(addMonths(month, 1))}><ChevronRight /></button></div></div>
-      <div className="calendar weekdays">{['Po','Út','St','Čt','Pá','So','Ne'].map((d) => <strong key={d}>{d}</strong>)}</div>
-      <div className="calendar">{days.map((day) => {
+      <div className="panel-head"><div><p className="week-kicker">TÝDENNÍ PŘEHLED</p><h2>{format(weekStart, 'd. M.', { locale: cs })} – {format(weekEnd, 'd. M. yyyy', { locale: cs })}</h2><div className="legend">{apartments.map((a) => <span key={a.id}><i style={{ background: a.color }} />{a.name}</span>)}</div></div><div className="month-controls"><button onClick={() => setWeek(subWeeks(weekStart, 1))}><ChevronLeft /></button><button onClick={() => setWeek(startOfWeek(new Date(), { weekStartsOn: 1 }))}>Dnes</button><button onClick={() => setWeek(addWeeks(weekStart, 1))}><ChevronRight /></button></div></div>
+      <div className="week-calendar">{days.map((day) => {
         const matches = bookings.filter((b) => parseISO(b.date_from) <= day && parseISO(b.date_to) >= day)
-        return <div className={`day ${!isSameMonth(day, month) ? 'muted' : ''} ${isSameDay(day, new Date()) ? 'today' : ''}`} key={day.toISOString()}><span>{format(day, 'd')}</span>{matches.slice(0, 2).map((b) => { const apt = apartments.find((a) => a.id === b.apartment_id); return <div className="booking-chip" style={{ '--apt': apt?.color ?? '#667' } as React.CSSProperties} key={b.id} title={`${b.guest_name}, ${b.guest_count} hosté`}>{b.guest_name}</div>})}{matches.length > 2 && <small>+{matches.length - 2} další</small>}</div>
+        return <div className={`week-day ${isSameDay(day, new Date()) ? 'today' : ''}`} key={day.toISOString()}><div className="week-day-head"><span>{format(day, 'EEEE', { locale: cs })}</span><strong>{format(day, 'd. M.')}</strong></div><div className="week-day-bookings">{matches.length ? matches.map((b) => { const apt = apartments.find((a) => a.id === b.apartment_id); return <button className="booking-chip" onClick={() => onEdit(b)} style={{ '--apt': apt?.color ?? '#667' } as React.CSSProperties} key={b.id} title="Kliknutím upravit"><strong>{b.guest_name}</strong><small>{apt?.name ?? 'Apartmán'} · {b.guest_count} {b.guest_count === 1 ? 'host' : 'hosté'}</small></button>}) : <span className="no-bookings">Volno</span>}</div></div>
       })}</div>
     </section>
-    <section className="panel"><div className="panel-head"><h2>Nadcházející pobyty</h2></div><div className="table-wrap"><table><thead><tr><th>Host</th><th>Apartmán</th><th>Termín</th><th>Hosté</th><th>Zdroj</th><th></th></tr></thead><tbody>{bookings.length ? bookings.map((b) => <tr key={b.id}><td><strong>{b.guest_name}</strong></td><td><ApartmentBadge apartment={apartments.find((a) => a.id === b.apartment_id)} /></td><td>{format(parseISO(b.date_from), 'd. M.')} – {format(parseISO(b.date_to), 'd. M. yyyy')}<small>{nights(b.date_from, b.date_to)} nocí</small></td><td>{b.guest_count}</td><td>{b.source}</td><td><button className="delete" onClick={() => remove('bookings', b.id)}><Trash2 size={16} /></button></td></tr>) : <EmptyRow columns={6} text="Zatím tu nejsou žádné pobyty." />}</tbody></table></div></section>
+    <section className="panel"><div className="panel-head"><h2>Všechny pobyty</h2></div><div className="table-wrap desktop-bookings"><table><thead><tr><th>Host</th><th>Apartmán</th><th>Termín</th><th>Hosté</th><th>Zdroj</th><th></th></tr></thead><tbody>{bookings.length ? bookings.map((b) => <tr key={b.id}><td><strong>{b.guest_name}</strong></td><td><ApartmentBadge apartment={apartments.find((a) => a.id === b.apartment_id)} /></td><td>{format(parseISO(b.date_from), 'd. M.')} – {format(parseISO(b.date_to), 'd. M. yyyy')}<small>{nights(b.date_from, b.date_to)} nocí</small></td><td>{b.guest_count}</td><td>{b.source}</td><td><div className="row-actions"><button className="edit" onClick={() => onEdit(b)} title="Upravit"><Pencil size={16} /></button><button className="delete" onClick={() => remove('bookings', b.id)} title="Smazat"><Trash2 size={16} /></button></div></td></tr>) : <EmptyRow columns={6} text="Zatím tu nejsou žádné pobyty." />}</tbody></table></div><div className="mobile-bookings">{bookings.length ? bookings.map((b) => <article key={b.id}><div className="mobile-booking-top"><div><strong>{b.guest_name}</strong><ApartmentBadge apartment={apartments.find((a) => a.id === b.apartment_id)} /></div><div className="row-actions"><button className="edit" onClick={() => onEdit(b)}><Pencil size={16} /></button><button className="delete" onClick={() => remove('bookings', b.id)}><Trash2 size={16} /></button></div></div><p>{format(parseISO(b.date_from), 'd. M.')} – {format(parseISO(b.date_to), 'd. M. yyyy')} · {nights(b.date_from, b.date_to)} nocí</p><small>{b.guest_count} {b.guest_count === 1 ? 'host' : 'hosté'} · {b.source}</small></article>) : <div className="empty-card">Zatím tu nejsou žádné pobyty.</div>}</div></section>
   </div>
 }
 
@@ -260,10 +284,10 @@ function InventoryPage({ inventory, apartments, remove, changeQuantity, onAddApa
   return <div className="content-stack"><section className="stats-grid"><Stat icon={<Boxes />} label="Položek celkem" value={String(inventory.length)} /><Stat icon={<CircleAlert />} label="Je potřeba doplnit" value={String(low.length)} warning={low.length > 0} /><Stat icon={<BedDouble />} label="Apartmány" value={String(apartments.length)} /></section><div className="section-title"><h2>Zásoby podle apartmánu</h2><button className="secondary" onClick={onAddApartment}><Plus size={17} /> Nový apartmán</button></div>{apartments.length ? apartments.map((apt) => { const items = inventory.filter((i) => i.apartment_id === apt.id); return <section className="panel" key={apt.id}><div className="panel-head"><div><ApartmentBadge apartment={apt} /><p>{items.length} položek</p></div></div><div className="inventory-grid">{items.length ? items.map((item) => { const isLow = Number(item.quantity) <= Number(item.minimum_quantity); return <article className={`stock-card ${isLow ? 'stock-low' : ''}`} key={item.id}><div><h3>{item.name}</h3><p>Minimum: {item.minimum_quantity} {item.unit}</p></div><div className="stock-value"><strong>{item.quantity}</strong><span>{item.unit}</span></div>{isLow && <span className="low-label">Doplnit</span>}<div className="quantity-controls"><button aria-label="Odebrat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) - 1)}>−</button><button aria-label="Přidat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) + 1)}>+</button></div><button className="delete" onClick={() => remove('inventory_items', item.id)}><Trash2 size={15} /></button></article>}) : <div className="empty-card">Pro tento apartmán zatím nejsou žádné položky.</div>}</div></section>}) : <section className="panel empty-card">Nejdřív přidejte apartmán.</section>}</div>
 }
 
-function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown>) => Promise<string | null>; demoAdd: (kind: string, value: unknown) => void }) {
+function EntryModal({ kind, apartments, editingBooking, onClose, onInsert, onUpdate, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; editingBooking: Booking | null; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown>) => Promise<string | null>; onUpdate: (table: string, id: string, payload: Record<string, unknown>) => Promise<string | null>; demoAdd: (kind: string, value: unknown) => void }) {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const titles = { booking: 'Nový pobyt', expense: 'Nový výdaj', inventory: 'Nová skladová položka', apartment: 'Nový apartmán' }
+  const titles = { booking: editingBooking ? 'Upravit pobyt' : 'Nový pobyt', expense: 'Nový výdaj', inventory: 'Nová skladová položka', apartment: 'Nový apartmán' }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setSaving(true); setFormError('')
     const data = Object.fromEntries(new FormData(e.currentTarget).entries())
@@ -278,22 +302,22 @@ function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Ex
       demoAdd(kind, { ...payload, id: crypto.randomUUID(), updated_at: new Date().toISOString() })
       onClose(); return
     }
-    const insertError = await onInsert(table, payload)
-    if (!insertError) onClose()
-    else setFormError(insertError)
+    const saveError = editingBooking && kind === 'booking' ? await onUpdate(table, editingBooking.id, payload) : await onInsert(table, payload)
+    if (!saveError) onClose()
+    else setFormError(saveError)
     setSaving(false)
   }
   return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-head"><div><p className="eyebrow">PŘIDAT ZÁZNAM</p><h2>{titles[kind]}</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><form onSubmit={submit}>
-    {kind === 'booking' && <><label>Jméno hosta<input required name="guest_name" autoFocus /></label><div className="form-row"><label>Apartmán<SelectApartment apartments={apartments} required /></label><label>Počet hostů<input required name="guest_count" type="number" min="1" defaultValue="2" /></label></div><div className="form-row"><label>Příjezd<input required name="date_from" type="date" defaultValue={today} /></label><label>Odjezd<input required name="date_to" type="date" defaultValue={today} /></label></div><label>Zdroj<select name="source" defaultValue="Booking.com"><option>Booking.com</option><option>Airbnb</option><option>Přímá rezervace</option><option>Jiné</option></select></label><label>Poznámka<textarea name="note" rows={2} /></label></>}
+    {kind === 'booking' && <><label>Jméno hosta<input required name="guest_name" autoFocus defaultValue={editingBooking?.guest_name ?? ''} /></label><div className="form-row"><label>Apartmán<SelectApartment apartments={apartments} required value={editingBooking?.apartment_id} /></label><label>Počet hostů<input required name="guest_count" type="number" min="1" defaultValue={editingBooking?.guest_count ?? 2} /></label></div><div className="form-row"><label>Příjezd<input required name="date_from" type="date" defaultValue={editingBooking?.date_from ?? today} /></label><label>Odjezd<input required name="date_to" type="date" defaultValue={editingBooking?.date_to ?? today} /></label></div><label>Zdroj<select name="source" defaultValue={editingBooking?.source ?? 'Booking.com'}><option>Booking.com</option><option>Airbnb</option><option>Přímá rezervace</option><option>Jiné</option></select></label><label>Poznámka<textarea name="note" rows={2} defaultValue={editingBooking?.note ?? ''} /></label></>}
     {kind === 'expense' && <><label>Popis<input required name="description" autoFocus placeholder="Např. praní prádla" /></label><div className="form-row"><label>Částka (Kč)<input required name="amount" type="number" min="0" step="0.01" /></label><label>Datum<input required name="spent_on" type="date" defaultValue={today} /></label></div><div className="form-row"><label>Kategorie<select name="category"><option>Praní</option><option>Drogerie</option><option>Vybavení</option><option>Úklid</option><option>Opravy</option><option>Energie</option><option>Ostatní</option></select></label><label>Apartmán<SelectApartment apartments={apartments} allowShared /></label></div><label>Poznámka<textarea name="note" rows={2} /></label></>}
     {kind === 'inventory' && <>{apartments.length === 0 ? <div className="form-notice"><CircleAlert size={18} />Nejdřív přidejte alespoň jeden apartmán v sekci Apartmány.</div> : <><label>Název položky<input required name="name" autoFocus placeholder="Např. cukr" /></label><label>Apartmán<SelectApartment apartments={apartments} required /></label><div className="form-row"><label>Aktuální počet<input required name="quantity" type="number" min="0" step="0.01" defaultValue="0" /></label><label>Jednotka<select name="unit"><option>ks</option><option>balení</option><option>lahví</option><option>kg</option><option>l</option></select></label></div><label>Upozornit při počtu<input required name="minimum_quantity" type="number" min="0" step="0.01" defaultValue="1" /></label></>}</>}
     {kind === 'apartment' && <><label>Název apartmánu<input required name="name" autoFocus placeholder="Např. Apartmán 1" /></label><label>Barva v kalendáři<input required name="color" type="color" defaultValue="#2f6f62" /></label></>}
-    {formError && <p className="form-error">{formError}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Zrušit</button><button className="primary" disabled={saving || ((kind === 'booking' || kind === 'inventory') && apartments.length === 0)}>{saving ? 'Ukládám…' : 'Uložit'}</button></div>
+    {formError && <p className="form-error">{formError}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Zrušit</button><button className="primary" disabled={saving || ((kind === 'booking' || kind === 'inventory') && apartments.length === 0)}>{saving ? 'Ukládám…' : editingBooking && kind === 'booking' ? 'Uložit změny' : 'Uložit'}</button></div>
   </form></div></div>
 }
 
-function SelectApartment({ apartments, required, allowShared }: { apartments: Apartment[]; required?: boolean; allowShared?: boolean }) {
-  return <select name="apartment_id" required={required} defaultValue="">{allowShared && <option value="">Společné</option>}{!allowShared && <option value="" disabled>Vyberte…</option>}{apartments.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select>
+function SelectApartment({ apartments, required, allowShared, value }: { apartments: Apartment[]; required?: boolean; allowShared?: boolean; value?: string }) {
+  return <select name="apartment_id" required={required} defaultValue={value ?? ''}>{allowShared && <option value="">Společné</option>}{!allowShared && <option value="" disabled>Vyberte…</option>}{apartments.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select>
 }
 
 function Stat({ icon, label, value, warning }: { icon: React.ReactNode; label: string; value: string; warning?: boolean }) { return <article className={`stat ${warning ? 'warning' : ''}`}><span>{icon}</span><div><p>{label}</p><strong>{value}</strong></div></article> }
