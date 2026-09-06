@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   BedDouble,
+  Building2,
   Boxes,
   CalendarDays,
   ChevronLeft,
@@ -32,7 +33,7 @@ import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
 import type { Apartment, Booking, Expense, InventoryItem } from './types'
 
-type Page = 'calendar' | 'expenses' | 'inventory'
+type Page = 'calendar' | 'apartments' | 'expenses' | 'inventory'
 type Modal = 'booking' | 'expense' | 'inventory' | 'apartment' | null
 
 const demoApartments: Apartment[] = [
@@ -99,15 +100,15 @@ function App() {
     setLoading(false)
   }
 
-  async function insert(table: string, payload: Record<string, unknown>) {
-    if (!supabase) return false
+  async function insert(table: string, payload: Record<string, unknown>): Promise<string | null> {
+    if (!supabase) return null
     const { error: insertError } = await supabase.from(table).insert(payload)
     if (insertError) {
       setError(insertError.message)
-      return false
+      return insertError.message
     }
     await loadData()
-    return true
+    return null
   }
 
   async function remove(table: string, id: string) {
@@ -140,8 +141,10 @@ function App() {
   if (!authReady) return <div className="center-state">Načítám…</div>
   if (isSupabaseConfigured && !session) return <Login />
 
-  const pageTitle = page === 'calendar' ? 'Pobyty a hosté' : page === 'expenses' ? 'Výdaje' : 'Zásoby'
-  const pageSubtitle = page === 'calendar' ? 'Všechny rezervace na jednom místě' : page === 'expenses' ? 'Kontrola provozních nákladů' : 'Co je potřeba doplnit'
+  const pageTitle = page === 'calendar' ? 'Pobyty a hosté' : page === 'apartments' ? 'Apartmány' : page === 'expenses' ? 'Výdaje' : 'Zásoby'
+  const pageSubtitle = page === 'calendar' ? 'Všechny rezervace na jednom místě' : page === 'apartments' ? 'Přehled všech spravovaných ubytování' : page === 'expenses' ? 'Kontrola provozních nákladů' : 'Co je potřeba doplnit'
+  const addKind: Exclude<Modal, null> = page === 'calendar' ? 'booking' : page === 'apartments' ? 'apartment' : page === 'expenses' ? 'expense' : 'inventory'
+  const addLabel = page === 'calendar' ? 'pobyt' : page === 'apartments' ? 'apartmán' : page === 'expenses' ? 'výdaj' : 'položku'
 
   return (
     <div className="app-shell">
@@ -149,6 +152,7 @@ function App() {
         <div className="brand"><span className="brand-mark"><BedDouble size={22} /></span><div><strong>Moje apartmány</strong><small>Provozní přehled</small></div></div>
         <nav>
           <NavButton active={page === 'calendar'} onClick={() => setPage('calendar')} icon={<CalendarDays />} label="Kalendář" />
+          <NavButton active={page === 'apartments'} onClick={() => setPage('apartments')} icon={<Building2 />} label="Apartmány" />
           <NavButton active={page === 'expenses'} onClick={() => setPage('expenses')} icon={<ReceiptText />} label="Výdaje" />
           <NavButton active={page === 'inventory'} onClick={() => setPage('inventory')} icon={<Boxes />} label="Zásoby" />
         </nav>
@@ -161,12 +165,13 @@ function App() {
       <main>
         <header className="topbar">
           <div><p className="eyebrow">SPRÁVA UBYTOVÁNÍ</p><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
-          <button className="primary" onClick={() => setModal(page === 'calendar' ? 'booking' : page === 'expenses' ? 'expense' : 'inventory')}><Plus size={18} /> Přidat {page === 'calendar' ? 'pobyt' : page === 'expenses' ? 'výdaj' : 'položku'}</button>
+          <button className="primary" onClick={() => setModal(addKind)}><Plus size={18} /> Přidat {addLabel}</button>
         </header>
         {error && <div className="error"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {loading ? <div className="center-state">Načítám data…</div> : (
           <>
             {page === 'calendar' && <CalendarPage month={month} setMonth={setMonth} apartments={apartments} bookings={bookings} remove={remove} />}
+            {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
             {page === 'inventory' && <InventoryPage inventory={inventory} apartments={apartments} remove={remove} changeQuantity={changeInventory} onAddApartment={() => setModal('apartment')} />}
           </>
@@ -228,12 +233,34 @@ function ExpensesPage({ expenses, apartments, remove }: { expenses: Expense[]; a
   return <div className="content-stack"><section className="stats-grid"><Stat icon={<WalletCards />} label="Tento měsíc" value={money.format(current.reduce((s, e) => s + Number(e.amount), 0))} /><Stat icon={<ReceiptText />} label="Počet výdajů" value={String(current.length)} /><Stat icon={<BedDouble />} label="Nejvyšší kategorie" value={byCategory[0]?.[0] ?? '—'} /></section><section className="panel"><div className="panel-head"><div><h2>Přehled výdajů</h2><p>Seřazeno od nejnovějších</p></div></div><div className="table-wrap"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Apartmán</th><th>Částka</th><th></th></tr></thead><tbody>{expenses.length ? expenses.map((e) => <tr key={e.id}><td>{format(parseISO(e.spent_on), 'd. M. yyyy')}</td><td><strong>{e.description}</strong>{e.note && <small>{e.note}</small>}</td><td><span className="category">{e.category}</span></td><td>{e.apartment_id ? <ApartmentBadge apartment={apartments.find((a) => a.id === e.apartment_id)} /> : 'Společné'}</td><td className="amount">{money.format(e.amount)}</td><td><button className="delete" onClick={() => remove('expenses', e.id)}><Trash2 size={16} /></button></td></tr>) : <EmptyRow columns={6} text="Zatím tu nejsou žádné výdaje." />}</tbody></table></div></section></div>
 }
 
+function ApartmentsPage({ apartments, bookings, expenses, inventory, onAdd }: { apartments: Apartment[]; bookings: Booking[]; expenses: Expense[]; inventory: InventoryItem[]; onAdd: () => void }) {
+  const now = new Date()
+  return <div className="content-stack">
+    <section className="stats-grid">
+      <Stat icon={<Building2 />} label="Apartmánů celkem" value={String(apartments.length)} />
+      <Stat icon={<CalendarDays />} label="Aktivních a budoucích pobytů" value={String(bookings.filter((b) => parseISO(b.date_to) >= now).length)} />
+      <Stat icon={<CircleAlert />} label="Položek k doplnění" value={String(inventory.filter((i) => Number(i.quantity) <= Number(i.minimum_quantity)).length)} />
+    </section>
+    <div className="section-title"><h2>Moje apartmány</h2><button className="secondary" onClick={onAdd}><Plus size={17} /> Nový apartmán</button></div>
+    {apartments.length ? <section className="apartment-grid">{apartments.map((apt) => {
+      const aptBookings = bookings.filter((b) => b.apartment_id === apt.id)
+      const aptExpenses = expenses.filter((e) => e.apartment_id === apt.id && isSameMonth(parseISO(e.spent_on), now))
+      const aptInventory = inventory.filter((i) => i.apartment_id === apt.id)
+      const low = aptInventory.filter((i) => Number(i.quantity) <= Number(i.minimum_quantity)).length
+      return <article className="apartment-card" key={apt.id} style={{ '--apt': apt.color } as React.CSSProperties}>
+        <div className="apartment-card-head"><span><Building2 size={22} /></span><div><h3>{apt.name}</h3><p>{aptBookings.filter((b) => parseISO(b.date_to) >= now).length} budoucích pobytů</p></div></div>
+        <dl><div><dt>Zásoby</dt><dd>{aptInventory.length} položek</dd></div><div><dt>K doplnění</dt><dd className={low ? 'danger-text' : ''}>{low}</dd></div><div><dt>Výdaje tento měsíc</dt><dd>{money.format(aptExpenses.reduce((sum, e) => sum + Number(e.amount), 0))}</dd></div></dl>
+      </article>
+    })}</section> : <section className="panel empty-apartments"><span className="brand-mark large"><Building2 size={27} /></span><h2>Zatím tu není žádný apartmán</h2><p>Přidejte první apartmán. Ihned se objeví ve všech formulářích.</p><button className="primary" onClick={onAdd}><Plus size={18} /> Přidat apartmán</button></section>}
+  </div>
+}
+
 function InventoryPage({ inventory, apartments, remove, changeQuantity, onAddApartment }: { inventory: InventoryItem[]; apartments: Apartment[]; remove: (table: string, id: string) => void; changeQuantity: (id: string, quantity: number) => void; onAddApartment: () => void }) {
   const low = inventory.filter((i) => Number(i.quantity) <= Number(i.minimum_quantity))
   return <div className="content-stack"><section className="stats-grid"><Stat icon={<Boxes />} label="Položek celkem" value={String(inventory.length)} /><Stat icon={<CircleAlert />} label="Je potřeba doplnit" value={String(low.length)} warning={low.length > 0} /><Stat icon={<BedDouble />} label="Apartmány" value={String(apartments.length)} /></section><div className="section-title"><h2>Zásoby podle apartmánu</h2><button className="secondary" onClick={onAddApartment}><Plus size={17} /> Nový apartmán</button></div>{apartments.length ? apartments.map((apt) => { const items = inventory.filter((i) => i.apartment_id === apt.id); return <section className="panel" key={apt.id}><div className="panel-head"><div><ApartmentBadge apartment={apt} /><p>{items.length} položek</p></div></div><div className="inventory-grid">{items.length ? items.map((item) => { const isLow = Number(item.quantity) <= Number(item.minimum_quantity); return <article className={`stock-card ${isLow ? 'stock-low' : ''}`} key={item.id}><div><h3>{item.name}</h3><p>Minimum: {item.minimum_quantity} {item.unit}</p></div><div className="stock-value"><strong>{item.quantity}</strong><span>{item.unit}</span></div>{isLow && <span className="low-label">Doplnit</span>}<div className="quantity-controls"><button aria-label="Odebrat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) - 1)}>−</button><button aria-label="Přidat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) + 1)}>+</button></div><button className="delete" onClick={() => remove('inventory_items', item.id)}><Trash2 size={15} /></button></article>}) : <div className="empty-card">Pro tento apartmán zatím nejsou žádné položky.</div>}</div></section>}) : <section className="panel empty-card">Nejdřív přidejte apartmán.</section>}</div>
 }
 
-function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown>) => Promise<boolean>; demoAdd: (kind: string, value: unknown) => void }) {
+function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown>) => Promise<string | null>; demoAdd: (kind: string, value: unknown) => void }) {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const titles = { booking: 'Nový pobyt', expense: 'Nový výdaj', inventory: 'Nová skladová položka', apartment: 'Nový apartmán' }
@@ -251,15 +278,17 @@ function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Ex
       demoAdd(kind, { ...payload, id: crypto.randomUUID(), updated_at: new Date().toISOString() })
       onClose(); return
     }
-    if (await onInsert(table, payload)) onClose()
+    const insertError = await onInsert(table, payload)
+    if (!insertError) onClose()
+    else setFormError(insertError)
     setSaving(false)
   }
   return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-head"><div><p className="eyebrow">PŘIDAT ZÁZNAM</p><h2>{titles[kind]}</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><form onSubmit={submit}>
     {kind === 'booking' && <><label>Jméno hosta<input required name="guest_name" autoFocus /></label><div className="form-row"><label>Apartmán<SelectApartment apartments={apartments} required /></label><label>Počet hostů<input required name="guest_count" type="number" min="1" defaultValue="2" /></label></div><div className="form-row"><label>Příjezd<input required name="date_from" type="date" defaultValue={today} /></label><label>Odjezd<input required name="date_to" type="date" defaultValue={today} /></label></div><label>Zdroj<select name="source" defaultValue="Booking.com"><option>Booking.com</option><option>Airbnb</option><option>Přímá rezervace</option><option>Jiné</option></select></label><label>Poznámka<textarea name="note" rows={2} /></label></>}
     {kind === 'expense' && <><label>Popis<input required name="description" autoFocus placeholder="Např. praní prádla" /></label><div className="form-row"><label>Částka (Kč)<input required name="amount" type="number" min="0" step="0.01" /></label><label>Datum<input required name="spent_on" type="date" defaultValue={today} /></label></div><div className="form-row"><label>Kategorie<select name="category"><option>Praní</option><option>Drogerie</option><option>Vybavení</option><option>Úklid</option><option>Opravy</option><option>Energie</option><option>Ostatní</option></select></label><label>Apartmán<SelectApartment apartments={apartments} allowShared /></label></div><label>Poznámka<textarea name="note" rows={2} /></label></>}
-    {kind === 'inventory' && <><label>Název položky<input required name="name" autoFocus placeholder="Např. cukr" /></label><label>Apartmán<SelectApartment apartments={apartments} required /></label><div className="form-row"><label>Aktuální počet<input required name="quantity" type="number" min="0" step="0.01" defaultValue="0" /></label><label>Jednotka<select name="unit"><option>ks</option><option>balení</option><option>lahví</option><option>kg</option><option>l</option></select></label></div><label>Upozornit při počtu<input required name="minimum_quantity" type="number" min="0" step="0.01" defaultValue="1" /></label></>}
+    {kind === 'inventory' && <>{apartments.length === 0 ? <div className="form-notice"><CircleAlert size={18} />Nejdřív přidejte alespoň jeden apartmán v sekci Apartmány.</div> : <><label>Název položky<input required name="name" autoFocus placeholder="Např. cukr" /></label><label>Apartmán<SelectApartment apartments={apartments} required /></label><div className="form-row"><label>Aktuální počet<input required name="quantity" type="number" min="0" step="0.01" defaultValue="0" /></label><label>Jednotka<select name="unit"><option>ks</option><option>balení</option><option>lahví</option><option>kg</option><option>l</option></select></label></div><label>Upozornit při počtu<input required name="minimum_quantity" type="number" min="0" step="0.01" defaultValue="1" /></label></>}</>}
     {kind === 'apartment' && <><label>Název apartmánu<input required name="name" autoFocus placeholder="Např. Apartmán 1" /></label><label>Barva v kalendáři<input required name="color" type="color" defaultValue="#2f6f62" /></label></>}
-    {formError && <p className="form-error">{formError}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Zrušit</button><button className="primary" disabled={saving || (apartments.length === 0 && kind !== 'apartment')}>{saving ? 'Ukládám…' : 'Uložit'}</button></div>
+    {formError && <p className="form-error">{formError}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Zrušit</button><button className="primary" disabled={saving || ((kind === 'booking' || kind === 'inventory') && apartments.length === 0)}>{saving ? 'Ukládám…' : 'Uložit'}</button></div>
   </form></div></div>
 }
 
