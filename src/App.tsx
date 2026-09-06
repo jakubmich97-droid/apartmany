@@ -123,6 +123,20 @@ function App() {
     else await loadData()
   }
 
+  async function changeInventory(id: string, nextQuantity: number) {
+    const quantity = Math.max(0, nextQuantity)
+    if (!supabase) {
+      setInventory((items) => items.map((item) => item.id === id ? { ...item, quantity, updated_at: new Date().toISOString() } : item))
+      return
+    }
+    setInventory((items) => items.map((item) => item.id === id ? { ...item, quantity } : item))
+    const { error: updateError } = await supabase.from('inventory_items').update({ quantity }).eq('id', id)
+    if (updateError) {
+      setError(updateError.message)
+      await loadData()
+    }
+  }
+
   if (!authReady) return <div className="center-state">Načítám…</div>
   if (isSupabaseConfigured && !session) return <Login />
 
@@ -154,7 +168,7 @@ function App() {
           <>
             {page === 'calendar' && <CalendarPage month={month} setMonth={setMonth} apartments={apartments} bookings={bookings} remove={remove} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
-            {page === 'inventory' && <InventoryPage inventory={inventory} apartments={apartments} remove={remove} onAddApartment={() => setModal('apartment')} />}
+            {page === 'inventory' && <InventoryPage inventory={inventory} apartments={apartments} remove={remove} changeQuantity={changeInventory} onAddApartment={() => setModal('apartment')} />}
           </>
         )}
       </main>
@@ -214,9 +228,9 @@ function ExpensesPage({ expenses, apartments, remove }: { expenses: Expense[]; a
   return <div className="content-stack"><section className="stats-grid"><Stat icon={<WalletCards />} label="Tento měsíc" value={money.format(current.reduce((s, e) => s + Number(e.amount), 0))} /><Stat icon={<ReceiptText />} label="Počet výdajů" value={String(current.length)} /><Stat icon={<BedDouble />} label="Nejvyšší kategorie" value={byCategory[0]?.[0] ?? '—'} /></section><section className="panel"><div className="panel-head"><div><h2>Přehled výdajů</h2><p>Seřazeno od nejnovějších</p></div></div><div className="table-wrap"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Apartmán</th><th>Částka</th><th></th></tr></thead><tbody>{expenses.length ? expenses.map((e) => <tr key={e.id}><td>{format(parseISO(e.spent_on), 'd. M. yyyy')}</td><td><strong>{e.description}</strong>{e.note && <small>{e.note}</small>}</td><td><span className="category">{e.category}</span></td><td>{e.apartment_id ? <ApartmentBadge apartment={apartments.find((a) => a.id === e.apartment_id)} /> : 'Společné'}</td><td className="amount">{money.format(e.amount)}</td><td><button className="delete" onClick={() => remove('expenses', e.id)}><Trash2 size={16} /></button></td></tr>) : <EmptyRow columns={6} text="Zatím tu nejsou žádné výdaje." />}</tbody></table></div></section></div>
 }
 
-function InventoryPage({ inventory, apartments, remove, onAddApartment }: { inventory: InventoryItem[]; apartments: Apartment[]; remove: (table: string, id: string) => void; onAddApartment: () => void }) {
+function InventoryPage({ inventory, apartments, remove, changeQuantity, onAddApartment }: { inventory: InventoryItem[]; apartments: Apartment[]; remove: (table: string, id: string) => void; changeQuantity: (id: string, quantity: number) => void; onAddApartment: () => void }) {
   const low = inventory.filter((i) => Number(i.quantity) <= Number(i.minimum_quantity))
-  return <div className="content-stack"><section className="stats-grid"><Stat icon={<Boxes />} label="Položek celkem" value={String(inventory.length)} /><Stat icon={<CircleAlert />} label="Je potřeba doplnit" value={String(low.length)} warning={low.length > 0} /><Stat icon={<BedDouble />} label="Apartmány" value={String(apartments.length)} /></section><div className="section-title"><h2>Zásoby podle apartmánu</h2><button className="secondary" onClick={onAddApartment}><Plus size={17} /> Nový apartmán</button></div>{apartments.length ? apartments.map((apt) => { const items = inventory.filter((i) => i.apartment_id === apt.id); return <section className="panel" key={apt.id}><div className="panel-head"><div><ApartmentBadge apartment={apt} /><p>{items.length} položek</p></div></div><div className="inventory-grid">{items.length ? items.map((item) => { const isLow = Number(item.quantity) <= Number(item.minimum_quantity); return <article className={`stock-card ${isLow ? 'stock-low' : ''}`} key={item.id}><div><h3>{item.name}</h3><p>Minimum: {item.minimum_quantity} {item.unit}</p></div><div className="stock-value"><strong>{item.quantity}</strong><span>{item.unit}</span></div>{isLow && <span className="low-label">Doplnit</span>}<button className="delete" onClick={() => remove('inventory_items', item.id)}><Trash2 size={15} /></button></article>}) : <div className="empty-card">Pro tento apartmán zatím nejsou žádné položky.</div>}</div></section>}) : <section className="panel empty-card">Nejdřív přidejte apartmán.</section>}</div>
+  return <div className="content-stack"><section className="stats-grid"><Stat icon={<Boxes />} label="Položek celkem" value={String(inventory.length)} /><Stat icon={<CircleAlert />} label="Je potřeba doplnit" value={String(low.length)} warning={low.length > 0} /><Stat icon={<BedDouble />} label="Apartmány" value={String(apartments.length)} /></section><div className="section-title"><h2>Zásoby podle apartmánu</h2><button className="secondary" onClick={onAddApartment}><Plus size={17} /> Nový apartmán</button></div>{apartments.length ? apartments.map((apt) => { const items = inventory.filter((i) => i.apartment_id === apt.id); return <section className="panel" key={apt.id}><div className="panel-head"><div><ApartmentBadge apartment={apt} /><p>{items.length} položek</p></div></div><div className="inventory-grid">{items.length ? items.map((item) => { const isLow = Number(item.quantity) <= Number(item.minimum_quantity); return <article className={`stock-card ${isLow ? 'stock-low' : ''}`} key={item.id}><div><h3>{item.name}</h3><p>Minimum: {item.minimum_quantity} {item.unit}</p></div><div className="stock-value"><strong>{item.quantity}</strong><span>{item.unit}</span></div>{isLow && <span className="low-label">Doplnit</span>}<div className="quantity-controls"><button aria-label="Odebrat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) - 1)}>−</button><button aria-label="Přidat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) + 1)}>+</button></div><button className="delete" onClick={() => remove('inventory_items', item.id)}><Trash2 size={15} /></button></article>}) : <div className="empty-card">Pro tento apartmán zatím nejsou žádné položky.</div>}</div></section>}) : <section className="panel empty-card">Nejdřív přidejte apartmán.</section>}</div>
 }
 
 function EntryModal({ kind, apartments, onClose, onInsert, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown>) => Promise<boolean>; demoAdd: (kind: string, value: unknown) => void }) {

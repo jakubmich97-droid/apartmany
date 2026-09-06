@@ -75,7 +75,7 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .section-title h2 { margin: 0; }
 .inventory-grid { padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
-.stock-card { min-height: 116px; padding: 15px; border: 1px solid var(--line); border-radius: 13px; display: grid; grid-template-columns: 1fr auto; gap: 8px; position: relative; }
+.stock-card { min-height: 132px; padding: 15px; border: 1px solid var(--line); border-radius: 13px; display: grid; grid-template-columns: 1fr auto; gap: 8px; position: relative; }
 .stock-card h3 { font-size: 14px; margin-bottom: 5px; }
 .stock-card p { font-size: 11px; color: var(--muted); margin: 0; }
 .stock-card .delete { position: absolute; right: 5px; bottom: 5px; }
@@ -84,6 +84,9 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
 .stock-value span { color: var(--muted); font-size: 11px; }
 .stock-low { border-color: #e3b2a4; background: #fff8f5; }
 .low-label { color: #a84c35; background: #f5ddd6; width: max-content; padding: 3px 7px; border-radius: 5px; font-size: 10px; font-weight: 800; }
+.quantity-controls { display: flex; gap: 5px; align-self: end; }
+.quantity-controls button { width: 28px; height: 27px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--ink); font-weight: 800; }
+.quantity-controls button:hover { border-color: var(--green); color: var(--green); }
 .empty-card { padding: 30px; color: var(--muted); font-size: 13px; }
 .error { background: #fff2ee; color: #9d402d; border: 1px solid #e4b6aa; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 9px; margin-bottom: 18px; font-size: 13px; }
 .error span { flex: 1; }
