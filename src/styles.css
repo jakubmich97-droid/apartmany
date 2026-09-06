@@ -144,6 +144,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .login-card h1 { margin-bottom: 8px; }
 .login-card > p:not(.eyebrow) { color: var(--muted); }
 .login-card form { text-align: left; display: grid; gap: 15px; margin-top: 24px; }
+.login-error { margin: 14px 0 0 !important; text-align: center; }
 
 @media (max-width: 800px) {
   .app-shell { display: block; padding-bottom: 74px; }

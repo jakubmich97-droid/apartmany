@@ -211,17 +211,22 @@ function App() {
 }
 
 function Login() {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const cityAccounts: Record<string, string> = {
+    'mwm-olomouc': 'jamichalek@centrum.cz',
+  }
+  const [city, setCity] = useState('mwm-olomouc')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   async function submit(e: FormEvent) {
     e.preventDefault()
     setMessage('')
-    const { error } = await supabase!.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + window.location.pathname } })
-    if (error) setMessage(error.message)
-    else setSent(true)
+    setLoading(true)
+    const { error } = await supabase!.auth.signInWithPassword({ email: cityAccounts[city], password })
+    if (error) setMessage('Město nebo heslo není správné.')
+    setLoading(false)
   }
-  return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BedDouble size={28} /></span><p className="eyebrow">MOJE APARTMÁNY</p><h1>{sent ? 'Zkontrolujte e-mail' : 'Přihlášení'}</h1><p>{sent ? `Přihlašovací odkaz jsme poslali na ${email}.` : 'Přihlaste se bezpečným odkazem bez hesla.'}</p>{!sent && <form onSubmit={submit}><label>E-mail<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vas@email.cz" /></label><button className="primary full">Poslat přihlašovací odkaz</button></form>}{message && <p className="form-error">{message}</p>}</div></div>
+  return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BedDouble size={28} /></span><p className="eyebrow">SPRÁVA UBYTOVÁNÍ</p><h1>Přihlášení</h1><p>Vyberte město a zadejte přístupové heslo.</p><form onSubmit={submit}><label>Město<select value={city} onChange={(e) => setCity(e.target.value)}><option value="mwm-olomouc">MWM Olomouc</option></select></label><label>Heslo<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Zadejte heslo" autoComplete="current-password" /></label><button className="primary full" disabled={loading}>{loading ? 'Přihlašuji…' : 'Přihlásit'}</button></form>{message && <p className="form-error login-error">{message}</p>}</div></div>
 }
 
 function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
