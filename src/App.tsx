@@ -57,6 +57,7 @@ function nights(from: string, to: string) {
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured)
   const [page, setPage] = useState<Page>('calendar')
   const [modal, setModal] = useState<Modal>(null)
@@ -75,7 +76,10 @@ function App() {
       setSession(data.session)
       setAuthReady(true)
     })
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+    })
     return () => data.subscription.unsubscribe()
   }, [])
 
@@ -162,6 +166,7 @@ function App() {
   }
 
   if (!authReady) return <div className="center-state">Načítám…</div>
+  if (passwordRecovery && session) return <SetPassword onDone={() => setPasswordRecovery(false)} />
   if (isSupabaseConfigured && !session) return <Login />
 
   const pageTitle = page === 'calendar' ? 'Pobyty a hosté' : page === 'apartments' ? 'Apartmány' : page === 'expenses' ? 'Výdaje' : 'Zásoby'
@@ -217,6 +222,7 @@ function Login() {
   const [city, setCity] = useState('mwm-olomouc')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
   const [message, setMessage] = useState('')
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -226,7 +232,31 @@ function Login() {
     if (error) setMessage('Město nebo heslo není správné.')
     setLoading(false)
   }
-  return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BedDouble size={28} /></span><p className="eyebrow">SPRÁVA UBYTOVÁNÍ</p><h1>Přihlášení</h1><p>Vyberte město a zadejte přístupové heslo.</p><form onSubmit={submit}><label>Město<select value={city} onChange={(e) => setCity(e.target.value)}><option value="mwm-olomouc">MWM Olomouc</option></select></label><label>Heslo<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Zadejte heslo" autoComplete="current-password" /></label><button className="primary full" disabled={loading}>{loading ? 'Přihlašuji…' : 'Přihlásit'}</button></form>{message && <p className="form-error login-error">{message}</p>}</div></div>
+  async function resetPassword() {
+    setMessage('')
+    setLoading(true)
+    const { error } = await supabase!.auth.resetPasswordForEmail(cityAccounts[city], { redirectTo: window.location.origin + window.location.pathname })
+    if (error) setMessage('Obnovovací odkaz se nepodařilo odeslat.')
+    else setResetSent(true)
+    setLoading(false)
+  }
+  return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BedDouble size={28} /></span><p className="eyebrow">SPRÁVA UBYTOVÁNÍ</p><h1>Přihlášení</h1><p>{resetSent ? 'Odkaz pro nastavení hesla jsme poslali na e-mail správce.' : 'Vyberte město a zadejte přístupové heslo.'}</p>{!resetSent && <form onSubmit={submit}><label>Město<select value={city} onChange={(e) => setCity(e.target.value)}><option value="mwm-olomouc">MWM Olomouc</option></select></label><label>Heslo<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Zadejte heslo" autoComplete="current-password" /></label><button className="primary full" disabled={loading}>{loading ? 'Přihlašuji…' : 'Přihlásit'}</button><button type="button" className="text-button" disabled={loading} onClick={resetPassword}>Nastavit nebo obnovit heslo</button></form>}{message && <p className="form-error login-error">{message}</p>}</div></div>
+}
+
+function SetPassword({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setMessage('')
+    const { error } = await supabase!.auth.updateUser({ password })
+    if (error) setMessage(error.message)
+    else onDone()
+    setLoading(false)
+  }
+  return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BedDouble size={28} /></span><p className="eyebrow">MWM OLOMOUC</p><h1>Nastavení hesla</h1><p>Zadejte nové přístupové heslo. Potom budete přihlášený.</p><form onSubmit={submit}><label>Nové heslo<input required minLength={8} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Alespoň 8 znaků" autoComplete="new-password" /></label><button className="primary full" disabled={loading}>{loading ? 'Ukládám…' : 'Nastavit heslo'}</button></form>{message && <p className="form-error login-error">{message}</p>}</div></div>
 }
 
 function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {

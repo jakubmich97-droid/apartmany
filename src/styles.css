@@ -145,6 +145,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .login-card > p:not(.eyebrow) { color: var(--muted); }
 .login-card form { text-align: left; display: grid; gap: 15px; margin-top: 24px; }
 .login-error { margin: 14px 0 0 !important; text-align: center; }
+.text-button { border: 0; background: transparent; color: var(--green); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.text-button:disabled { opacity: .5; }
 
 @media (max-width: 800px) {
   .app-shell { display: block; padding-bottom: 74px; }
