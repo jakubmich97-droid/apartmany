@@ -8,6 +8,8 @@ import {
   ChevronRight,
   CircleAlert,
   LogOut,
+  House,
+  MapPin,
   Plus,
   Pencil,
   ReceiptText,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react'
 import {
   addMonths,
+  addDays,
   addWeeks,
   eachDayOfInterval,
   endOfMonth,
@@ -36,7 +39,7 @@ import type { Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
 import type { Apartment, Booking, Expense, InventoryItem } from './types'
 
-type Page = 'calendar' | 'apartments' | 'expenses' | 'inventory'
+type Page = 'dashboard' | 'calendar' | 'apartments' | 'expenses' | 'inventory'
 type Modal = 'booking' | 'expense' | 'inventory' | 'apartment' | null
 
 const demoApartments: Apartment[] = [
@@ -59,8 +62,9 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured)
-  const [page, setPage] = useState<Page>('calendar')
+  const [page, setPage] = useState<Page>('dashboard')
   const [modal, setModal] = useState<Modal>(null)
+  const [dashboardDate, setDashboardDate] = useState(new Date())
   const [calendarDate, setCalendarDate] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [apartments, setApartments] = useState<Apartment[]>(isSupabaseConfigured ? [] : demoApartments)
@@ -169,16 +173,17 @@ function App() {
   if (passwordRecovery && session) return <SetPassword onDone={() => setPasswordRecovery(false)} />
   if (isSupabaseConfigured && !session) return <Login />
 
-  const pageTitle = page === 'calendar' ? 'Pobyty a hosté' : page === 'apartments' ? 'Apartmány' : page === 'expenses' ? 'Výdaje' : 'Zásoby'
-  const pageSubtitle = page === 'calendar' ? 'Všechny rezervace na jednom místě' : page === 'apartments' ? 'Přehled všech spravovaných ubytování' : page === 'expenses' ? 'Kontrola provozních nákladů' : 'Co je potřeba doplnit'
-  const addKind: Exclude<Modal, null> = page === 'calendar' ? 'booking' : page === 'apartments' ? 'apartment' : page === 'expenses' ? 'expense' : 'inventory'
-  const addLabel = page === 'calendar' ? 'pobyt' : page === 'apartments' ? 'apartmán' : page === 'expenses' ? 'výdaj' : 'položku'
+  const pageTitle = page === 'dashboard' ? 'Denní přehled' : page === 'calendar' ? 'Pobyty a hosté' : page === 'apartments' ? 'Apartmány' : page === 'expenses' ? 'Výdaje' : 'Zásoby'
+  const pageSubtitle = page === 'dashboard' ? 'Kde je potřeba připravit apartmán' : page === 'calendar' ? 'Všechny rezervace na jednom místě' : page === 'apartments' ? 'Přehled všech spravovaných ubytování' : page === 'expenses' ? 'Kontrola provozních nákladů' : 'Co je potřeba doplnit'
+  const addKind: Exclude<Modal, null> = page === 'apartments' ? 'apartment' : page === 'expenses' ? 'expense' : page === 'inventory' ? 'inventory' : 'booking'
+  const addLabel = page === 'apartments' ? 'apartmán' : page === 'expenses' ? 'výdaj' : page === 'inventory' ? 'položku' : 'pobyt'
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark"><BedDouble size={22} /></span><div><strong>Moje apartmány</strong><small>Provozní přehled</small></div></div>
         <nav>
+          <NavButton active={page === 'dashboard'} onClick={() => setPage('dashboard')} icon={<House />} label="Dnes" />
           <NavButton active={page === 'calendar'} onClick={() => setPage('calendar')} icon={<CalendarDays />} label="Kalendář" />
           <NavButton active={page === 'apartments'} onClick={() => setPage('apartments')} icon={<Building2 />} label="Apartmány" />
           <NavButton active={page === 'expenses'} onClick={() => setPage('expenses')} icon={<ReceiptText />} label="Výdaje" />
@@ -198,6 +203,7 @@ function App() {
         {error && <div className="error"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {loading ? <div className="center-state">Načítám data…</div> : (
           <>
+            {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'calendar' && <CalendarPage week={calendarDate} setWeek={setCalendarDate} apartments={apartments} bookings={bookings} remove={remove} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
@@ -261,6 +267,39 @@ function SetPassword({ onDone }: { onDone: () => void }) {
 
 function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return <button className={active ? 'nav-active' : ''} onClick={onClick}>{icon}{label}</button>
+}
+
+function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Date; setDay: (day: Date) => void; apartments: Apartment[]; bookings: Booking[]; onEdit: (booking: Booking) => void }) {
+  const dayKey = format(day, 'yyyy-MM-dd')
+  const arrivals = bookings.filter((booking) => booking.date_from === dayKey)
+  const tomorrowKey = format(addDays(day, 1), 'yyyy-MM-dd')
+  const tomorrowCount = bookings.filter((booking) => booking.date_from === tomorrowKey).length
+  const isToday = isSameDay(day, new Date())
+  return <div className="content-stack">
+    <section className="day-switcher panel">
+      <button onClick={() => setDay(addDays(day, -1))}><ChevronLeft size={19} /></button>
+      <div><p>{isToday ? 'DNES' : format(day, 'EEEE', { locale: cs }).toUpperCase()}</p><h2>{format(day, 'd. MMMM yyyy', { locale: cs })}</h2></div>
+      <button onClick={() => setDay(addDays(day, 1))}><ChevronRight size={19} /></button>
+    </section>
+    {!isToday && <button className="today-link" onClick={() => setDay(new Date())}>Vrátit se na dnešek</button>}
+    <section className="stats-grid">
+      <Stat icon={<House />} label="Apartmánů k úklidu" value={String(arrivals.length)} />
+      <Stat icon={<Users />} label="Přijíždějících hostů" value={String(arrivals.reduce((sum, booking) => sum + booking.guest_count, 0))} />
+      <Stat icon={<CalendarDays />} label="Příjezdy následující den" value={String(tomorrowCount)} />
+    </section>
+    <section className="panel cleaning-panel">
+      <div className="panel-head"><div><p className="eyebrow">PLÁN ÚKLIDU</p><h2>{arrivals.length ? `Připravit ${arrivals.length} ${arrivals.length === 1 ? 'apartmán' : arrivals.length < 5 ? 'apartmány' : 'apartmánů'}` : 'Žádný úklid před příjezdem'}</h2></div></div>
+      {arrivals.length ? <div className="cleaning-list">{arrivals.map((booking, index) => {
+        const apartment = apartments.find((item) => item.id === booking.apartment_id)
+        return <article className="cleaning-card" key={booking.id} style={{ '--apt': apartment?.color ?? '#667' } as React.CSSProperties}>
+          <span className="cleaning-order">{index + 1}</span>
+          <div className="cleaning-main"><div className="cleaning-title"><MapPin size={18} /><h3>{apartment?.name ?? 'Neznámý apartmán'}</h3></div><p>Připravit před příjezdem hosta <strong>{booking.guest_name}</strong></p>{booking.note && <small>{booking.note}</small>}</div>
+          <div className="cleaning-meta"><span><Users size={15} /> {booking.guest_count} {booking.guest_count === 1 ? 'host' : 'hosté'}</span><span><CalendarDays size={15} /> {nights(booking.date_from, booking.date_to)} nocí</span><span>{booking.source}</span></div>
+          <button className="secondary cleaning-edit" onClick={() => onEdit(booking)}><Pencil size={15} /> Upravit pobyt</button>
+        </article>
+      })}</div> : <div className="empty-cleaning"><span className="brand-mark large"><House size={27} /></span><h3>Pro tento den nic nezačíná</h3><p>V žádném apartmánu není naplánovaný nový příjezd.</p></div>}
+    </section>
+  </div>
 }
 
 function CalendarPage({ week, setWeek, apartments, bookings, remove, onEdit }: { week: Date; setWeek: (d: Date) => void; apartments: Apartment[]; bookings: Booking[]; remove: (table: string, id: string) => void; onEdit: (booking: Booking) => void }) {
