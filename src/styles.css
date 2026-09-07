@@ -280,3 +280,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .day { min-height: 58px; }
   .section-title-actions { grid-template-columns: 1fr; }
 }
+/* Push notifications */
+.notification-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;padding:16px 18px}.notification-card h3{margin:0 0 3px}.notification-card p{margin:0;color:var(--muted)}.notification-card small{display:block;margin-top:5px;color:var(--accent)}.notification-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:#eeeae1;color:var(--muted)}.notification-enabled .notification-icon{background:#dcebe6;color:var(--accent)}
+@media(max-width:640px){.notification-card{grid-template-columns:auto 1fr}.notification-card>button{grid-column:1/-1;width:100%}}

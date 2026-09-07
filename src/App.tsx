@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   BedDouble,
+  Bell,
+  BellOff,
   Building2,
   Boxes,
   CalendarDays,
@@ -317,6 +319,7 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
   const monthApartmentCount = new Set(monthBookings.map((booking) => booking.apartment_id)).size
   const isToday = isSameDay(day, new Date())
   return <div className="content-stack">
+    <NotificationSettings />
     <section className="day-switcher panel">
       <button onClick={() => setDay(addDays(day, -1))}><ChevronLeft size={19} /></button>
       <div><p>{isToday ? 'DNES' : format(day, 'EEEE', { locale: cs }).toUpperCase()}</p><h2>{format(day, 'd. MMMM yyyy', { locale: cs })}</h2></div>
@@ -362,6 +365,66 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
       </div>
     </section>
   </div>
+}
+
+const vapidPublicKey = 'BKXUVeA2f_mhEIFDkyaGVvLWzsS7G4ZFDAo0qTLQmWmXk53kpeI4Wa8JIorxIcGjnmj21MmUYU13gYPK6dC6sak'
+
+function urlBase64ToUint8Array(value: string) {
+  const padding = '='.repeat((4 - value.length % 4) % 4)
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
+  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+}
+
+function NotificationSettings() {
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(() => !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window) ? 'unsupported' : Notification.permission)
+  const [enabled, setEnabled] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (permission === 'unsupported') return
+    navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then((subscription) => setEnabled(Boolean(subscription))).catch(() => setEnabled(false))
+  }, [permission])
+
+  async function enableNotifications() {
+    setSaving(true); setMessage('')
+    try {
+      const nextPermission = await Notification.requestPermission()
+      setPermission(nextPermission)
+      if (nextPermission !== 'granted') { setMessage('Povolení nebylo uděleno. Lze ho změnit v Nastavení iPhonu.'); return }
+      const registration = await navigator.serviceWorker.ready
+      const existing = await registration.pushManager.getSubscription()
+      const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) })
+      const json = subscription.toJSON()
+      const { error } = await supabase!.from('push_subscriptions').upsert({
+        endpoint: json.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Prague',
+        enabled: true,
+      }, { onConflict: 'endpoint' })
+      if (error) throw error
+      setEnabled(true); setMessage('Hotovo. Upozornění budou chodit ráno v 7:00 a večer v 18:00.')
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : 'Notifikace se nepodařilo zapnout.')
+    } finally { setSaving(false) }
+  }
+
+  async function disableNotifications() {
+    setSaving(true); setMessage('')
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+      if (subscription) {
+        await supabase!.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint)
+        await subscription.unsubscribe()
+      }
+      setEnabled(false); setMessage('Notifikace jsou vypnuté.')
+    } catch { setMessage('Notifikace se nepodařilo vypnout.') } finally { setSaving(false) }
+  }
+
+  if (permission === 'unsupported') return <section className="notification-card panel"><BellOff size={22} /><div><h3>Notifikace nejsou dostupné</h3><p>Na iPhonu otevřete aplikaci z ikony přidané na plochu.</p></div></section>
+  return <section className={`notification-card panel ${enabled ? 'notification-enabled' : ''}`}><span className="notification-icon">{enabled ? <Bell size={22} /> : <BellOff size={22} />}</span><div><h3>{enabled ? 'Notifikace jsou zapnuté' : 'Upozornění na úklidy'}</h3><p>{enabled ? 'V 7:00 dnešní plán a v 18:00 plán na zítřek.' : 'Nechte si připomenout dnešní a zítřejší úklidy.'}</p>{message && <small>{message}</small>}</div><button className={enabled ? 'secondary' : 'primary'} disabled={saving} onClick={enabled ? disableNotifications : enableNotifications}>{saving ? 'Čekejte…' : enabled ? 'Vypnout' : 'Zapnout'}</button></section>
 }
 
 function MovementPanel({ title, type, bookings, apartments }: { title: string; type: 'arrival' | 'departure'; bookings: Booking[]; apartments: Apartment[] }) {

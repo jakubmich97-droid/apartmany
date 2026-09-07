@@ -1,0 +1,14 @@
+{
+  "name": "Moje apartmány",
+  "short_name": "Apartmány",
+  "description": "Přehled rezervací, úklidů, výdajů a zásob.",
+  "start_url": "/apartmany/",
+  "scope": "/apartmany/",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#173f37",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
