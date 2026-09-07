@@ -22,9 +22,13 @@ create table if not exists public.bookings (
   date_to date not null,
   source text not null default 'Booking.com',
   note text,
+  cleaning_completed_at timestamptz,
   created_at timestamptz not null default now(),
   check (date_to >= date_from)
 );
+
+-- Doplní sloupec i do databází vytvořených starší verzí tohoto souboru.
+alter table public.bookings add column if not exists cleaning_completed_at timestamptz;
 
 create table if not exists public.expenses (
   id uuid primary key default gen_random_uuid(),
@@ -104,4 +108,3 @@ using ((select auth.uid()) = owner_id) with check (
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.apartments, public.bookings, public.expenses, public.inventory_items to authenticated;
-

@@ -13,6 +13,7 @@ export type Booking = {
   date_to: string
   source: string
   note: string | null
+  cleaning_completed_at: string | null
 }
 
 export type Expense = {
