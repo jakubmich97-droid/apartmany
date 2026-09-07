@@ -241,7 +241,7 @@ function App() {
         if (kind === 'inventory') setInventory((v) => [...v, value as InventoryItem])
         if (kind === 'apartment') setApartments((v) => [...v, value as Apartment])
       }} />}
-      {shoppingListOpen && <ShoppingList inventory={inventory} apartments={apartments} onClose={() => setShoppingListOpen(false)} />}
+      {shoppingListOpen && <ShoppingList inventory={inventory} onClose={() => setShoppingListOpen(false)} />}
     </div>
   )
 }
@@ -401,14 +401,18 @@ function InventoryPage({ inventory, apartments, remove, changeQuantity, onEdit, 
   return <div className="content-stack"><section className="stats-grid"><Stat icon={<Boxes />} label="Položek celkem" value={String(inventory.length)} /><Stat icon={<CircleAlert />} label="Je potřeba doplnit" value={String(low.length)} warning={low.length > 0} /><Stat icon={<BedDouble />} label="Apartmány" value={String(apartments.length)} /></section><div className="section-title"><h2>Zásoby podle apartmánu</h2><div className="section-title-actions"><button className="primary" onClick={onShoppingList}><ShoppingCart size={17} /> Nákupní seznam <span className="button-count">{low.length}</span></button><button className="secondary" onClick={onAddApartment}><Plus size={17} /> Nový apartmán</button></div></div>{apartments.length ? apartments.map((apt) => { const items = inventory.filter((i) => i.apartment_id === apt.id); return <section className="panel" key={apt.id}><div className="panel-head"><div><ApartmentBadge apartment={apt} /><p>{items.length} položek</p></div></div><div className="inventory-grid">{items.length ? items.map((item) => { const isLow = Number(item.quantity) <= Number(item.minimum_quantity); return <article className={`stock-card ${isLow ? 'stock-low' : ''}`} key={item.id}><div><h3>{item.name}</h3><p>Minimum: {item.minimum_quantity} {item.unit}</p></div><div className="stock-value"><strong>{item.quantity}</strong><span>{item.unit}</span></div><div className="stock-footer">{isLow ? <span className="low-label">Doplnit</span> : <span />}<div className="stock-actions"><div className="quantity-controls"><button aria-label="Odebrat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) - 1)}>−</button><button aria-label="Přidat jeden kus" onClick={() => changeQuantity(item.id, Number(item.quantity) + 1)}>+</button></div><button className="stock-edit" aria-label={`Upravit ${item.name}`} onClick={() => onEdit(item)}><Pencil size={17} /></button><button className="stock-delete" aria-label={`Smazat ${item.name}`} onClick={() => remove('inventory_items', item.id)}><Trash2 size={17} /></button></div></div></article>}) : <div className="empty-card">Pro tento apartmán zatím nejsou žádné položky.</div>}</div></section>}) : <section className="panel empty-card">Nejdřív přidejte apartmán.</section>}</div>
 }
 
-function ShoppingList({ inventory, apartments, onClose }: { inventory: InventoryItem[]; apartments: Apartment[]; onClose: () => void }) {
+function ShoppingList({ inventory, onClose }: { inventory: InventoryItem[]; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const missing = inventory.filter((item) => Number(item.quantity) <= Number(item.minimum_quantity))
-  const shoppingText = ['Nákupní seznam', ...apartments.flatMap((apartment) => {
-    const items = missing.filter((item) => item.apartment_id === apartment.id)
-    if (!items.length) return []
-    return ['', apartment.name, ...items.map((item) => `• ${item.name}: ${Math.max(1, Math.ceil(Number(item.minimum_quantity) - Number(item.quantity)))} ${item.unit} (nyní ${item.quantity})`)]
-  })].join('\n')
+  const combined = Array.from(missing.reduce((items, item) => {
+    const key = `${item.name.trim().toLocaleLowerCase('cs')}|${item.unit}`
+    const buy = Math.max(1, Math.ceil(Number(item.minimum_quantity) - Number(item.quantity)))
+    const existing = items.get(key)
+    if (existing) existing.quantity += buy
+    else items.set(key, { name: item.name, unit: item.unit, quantity: buy })
+    return items
+  }, new Map<string, { name: string; unit: string; quantity: number }>()).values()).sort((a, b) => a.name.localeCompare(b.name, 'cs'))
+  const shoppingText = ['Nákupní seznam', '', ...combined.map((item) => `• ${item.name}: ${item.quantity} ${item.unit}`)].join('\n')
   async function shareList() {
     try {
       if (navigator.share) await navigator.share({ title: 'Nákupní seznam', text: shoppingText })
@@ -419,7 +423,7 @@ function ShoppingList({ inventory, apartments, onClose }: { inventory: Inventory
       // Uživatel může systémové sdílení zavřít bez změny.
     }
   }
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="modal shopping-modal"><div className="modal-head"><div><p className="eyebrow">ZÁSOBY</p><h2>Nákupní seznam</h2></div><button className="icon-button" onClick={onClose}><X /></button></div>{missing.length ? <div className="shopping-content">{apartments.map((apartment) => { const items = missing.filter((item) => item.apartment_id === apartment.id); if (!items.length) return null; return <section className="shopping-apartment" key={apartment.id}><ApartmentBadge apartment={apartment} /><div>{items.map((item) => <article key={item.id}><div><strong>{item.name}</strong><small>Aktuálně {item.quantity} {item.unit}, minimum {item.minimum_quantity}</small></div><span>koupit <strong>{Math.max(1, Math.ceil(Number(item.minimum_quantity) - Number(item.quantity)))}</strong> {item.unit}</span></article>)}</div></section>})}<button className="primary full" onClick={shareList}>{copied ? <Check size={18} /> : <ClipboardCopy size={18} />}{copied ? 'Zkopírováno' : 'Sdílet nebo zkopírovat'}</button></div> : <div className="empty-cleaning"><span className="brand-mark large"><Check size={27} /></span><h3>Není potřeba nic dokupovat</h3><p>Všechny zásoby jsou nad nastaveným minimem.</p></div>}</div></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="modal shopping-modal"><div className="modal-head"><div><p className="eyebrow">ZÁSOBY ZE VŠECH APARTMÁNŮ</p><h2>Nákupní seznam</h2></div><button className="icon-button" onClick={onClose}><X /></button></div>{combined.length ? <div className="shopping-content"><section className="shopping-apartment combined-shopping"><div>{combined.map((item) => <article key={`${item.name}-${item.unit}`}><strong>{item.name}</strong><span>koupit <strong>{item.quantity}</strong> {item.unit}</span></article>)}</div></section><button className="primary full" onClick={shareList}>{copied ? <Check size={18} /> : <ClipboardCopy size={18} />}{copied ? 'Zkopírováno' : 'Sdílet nebo zkopírovat'}</button></div> : <div className="empty-cleaning"><span className="brand-mark large"><Check size={27} /></span><h3>Není potřeba nic dokupovat</h3><p>Všechny zásoby jsou nad nastaveným minimem.</p></div>}</div></div>
 }
 
 function EntryModal({ kind, apartments, editingBooking, editingInventory, onClose, onInsert, onUpdate, demoAdd }: { kind: Exclude<Modal, null>; apartments: Apartment[]; editingBooking: Booking | null; editingInventory: InventoryItem | null; onClose: () => void; onInsert: (table: string, payload: Record<string, unknown> | Record<string, unknown>[]) => Promise<string | null>; onUpdate: (table: string, id: string, payload: Record<string, unknown>) => Promise<string | null>; demoAdd: (kind: string, value: unknown) => void }) {
