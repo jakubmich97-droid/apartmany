@@ -274,6 +274,7 @@ function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Dat
   const arrivals = bookings.filter((booking) => booking.date_from === dayKey)
   const tomorrowKey = format(addDays(day, 1), 'yyyy-MM-dd')
   const tomorrowCount = bookings.filter((booking) => booking.date_from === tomorrowKey).length
+  const completedCleanings = bookings.filter((booking) => booking.date_from < format(new Date(), 'yyyy-MM-dd')).length
   const isToday = isSameDay(day, new Date())
   return <div className="content-stack">
     <section className="day-switcher panel">
@@ -282,10 +283,11 @@ function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Dat
       <button onClick={() => setDay(addDays(day, 1))}><ChevronRight size={19} /></button>
     </section>
     {!isToday && <button className="today-link" onClick={() => setDay(new Date())}>Vrátit se na dnešek</button>}
-    <section className="stats-grid">
+    <section className="stats-grid dashboard-stats">
       <Stat icon={<House />} label="Apartmánů k úklidu" value={String(arrivals.length)} />
       <Stat icon={<Users />} label="Přijíždějících hostů" value={String(arrivals.reduce((sum, booking) => sum + booking.guest_count, 0))} />
       <Stat icon={<CalendarDays />} label="Příjezdy následující den" value={String(tomorrowCount)} />
+      <Stat icon={<Building2 />} label="Provedených úklidů celkem" value={String(completedCleanings)} />
     </section>
     <section className="panel cleaning-panel">
       <div className="panel-head"><div><p className="eyebrow">PLÁN ÚKLIDU</p><h2>{arrivals.length ? `Připravit ${arrivals.length} ${arrivals.length === 1 ? 'apartmán' : arrivals.length < 5 ? 'apartmány' : 'apartmánů'}` : 'Žádný úklid před příjezdem'}</h2></div></div>
