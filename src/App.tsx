@@ -65,6 +65,7 @@ function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [modal, setModal] = useState<Modal>(null)
   const [dashboardDate, setDashboardDate] = useState(new Date())
+  const [dashboardMonth, setDashboardMonth] = useState(startOfMonth(new Date()))
   const [calendarDate, setCalendarDate] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [apartments, setApartments] = useState<Apartment[]>(isSupabaseConfigured ? [] : demoApartments)
@@ -203,7 +204,7 @@ function App() {
         {error && <div className="error"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {loading ? <div className="center-state">Načítám data…</div> : (
           <>
-            {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
+            {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} month={dashboardMonth} setMonth={setDashboardMonth} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'calendar' && <CalendarPage week={calendarDate} setWeek={setCalendarDate} apartments={apartments} bookings={bookings} remove={remove} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
@@ -269,12 +270,15 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return <button className={active ? 'nav-active' : ''} onClick={onClick}>{icon}{label}</button>
 }
 
-function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Date; setDay: (day: Date) => void; apartments: Apartment[]; bookings: Booking[]; onEdit: (booking: Booking) => void }) {
+function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onEdit }: { day: Date; setDay: (day: Date) => void; month: Date; setMonth: (month: Date) => void; apartments: Apartment[]; bookings: Booking[]; onEdit: (booking: Booking) => void }) {
   const dayKey = format(day, 'yyyy-MM-dd')
   const arrivals = bookings.filter((booking) => booking.date_from === dayKey)
   const tomorrowKey = format(addDays(day, 1), 'yyyy-MM-dd')
   const tomorrowCount = bookings.filter((booking) => booking.date_from === tomorrowKey).length
-  const completedCleanings = bookings.filter((booking) => booking.date_from < format(new Date(), 'yyyy-MM-dd')).length
+  const todayKey = format(new Date(), 'yyyy-MM-dd')
+  const monthBookings = bookings.filter((booking) => isSameMonth(parseISO(booking.date_from), month))
+  const completedCleanings = monthBookings.filter((booking) => booking.date_from < todayKey).length
+  const monthApartmentCount = new Set(monthBookings.map((booking) => booking.apartment_id)).size
   const isToday = isSameDay(day, new Date())
   return <div className="content-stack">
     <section className="day-switcher panel">
@@ -283,11 +287,10 @@ function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Dat
       <button onClick={() => setDay(addDays(day, 1))}><ChevronRight size={19} /></button>
     </section>
     {!isToday && <button className="today-link" onClick={() => setDay(new Date())}>Vrátit se na dnešek</button>}
-    <section className="stats-grid dashboard-stats">
+    <section className="stats-grid">
       <Stat icon={<House />} label="Apartmánů k úklidu" value={String(arrivals.length)} />
       <Stat icon={<Users />} label="Přijíždějících hostů" value={String(arrivals.reduce((sum, booking) => sum + booking.guest_count, 0))} />
       <Stat icon={<CalendarDays />} label="Příjezdy následující den" value={String(tomorrowCount)} />
-      <Stat icon={<Building2 />} label="Provedených úklidů celkem" value={String(completedCleanings)} />
     </section>
     <section className="panel cleaning-panel">
       <div className="panel-head"><div><p className="eyebrow">PLÁN ÚKLIDU</p><h2>{arrivals.length ? `Připravit ${arrivals.length} ${arrivals.length === 1 ? 'apartmán' : arrivals.length < 5 ? 'apartmány' : 'apartmánů'}` : 'Žádný úklid před příjezdem'}</h2></div></div>
@@ -300,6 +303,20 @@ function DashboardPage({ day, setDay, apartments, bookings, onEdit }: { day: Dat
           <button className="secondary cleaning-edit" onClick={() => onEdit(booking)}><Pencil size={15} /> Upravit pobyt</button>
         </article>
       })}</div> : <div className="empty-cleaning"><span className="brand-mark large"><House size={27} /></span><h3>Pro tento den nic nezačíná</h3><p>V žádném apartmánu není naplánovaný nový příjezd.</p></div>}
+    </section>
+    <section className="monthly-overview">
+      <div className="month-overview-head panel">
+        <button onClick={() => setMonth(subMonths(month, 1))}><ChevronLeft size={19} /></button>
+        <div><p>MĚSÍČNÍ PŘEHLED</p><h2>{format(month, 'LLLL yyyy', { locale: cs })}</h2></div>
+        <button onClick={() => setMonth(addMonths(month, 1))}><ChevronRight size={19} /></button>
+      </div>
+      {!isSameMonth(month, new Date()) && <button className="today-link" onClick={() => setMonth(startOfMonth(new Date()))}>Aktuální měsíc</button>}
+      <div className="stats-grid dashboard-stats">
+        <Stat icon={<CalendarDays />} label="Naplánovaných úklidů" value={String(monthBookings.length)} />
+        <Stat icon={<House />} label="Provedených úklidů" value={String(completedCleanings)} />
+        <Stat icon={<Users />} label="Hostů v měsíci" value={String(monthBookings.reduce((sum, booking) => sum + booking.guest_count, 0))} />
+        <Stat icon={<Building2 />} label="Využitých apartmánů" value={String(monthApartmentCount)} />
+      </div>
     </section>
   </div>
 }
