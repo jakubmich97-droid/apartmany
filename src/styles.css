@@ -120,6 +120,8 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
 .empty-row { text-align: center; padding: 35px; color: var(--muted); }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .section-title h2 { margin: 0; }
+.section-title-actions { display: flex; align-items: center; gap: 9px; }
+.button-count { min-width: 20px; height: 20px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: 10px; background: rgba(255,255,255,.2); font-size: 10px; }
 .inventory-grid { padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .apartment-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 15px; }
 .apartment-card { --apt: #2f6f62; overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-top: 4px solid var(--apt); border-radius: 16px; padding: 19px; box-shadow: 0 8px 25px rgba(43,57,53,.04); }
@@ -134,19 +136,33 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
 .danger-text { color: #a84c35; }
 .empty-apartments { padding: 44px 25px; text-align: center; }
 .empty-apartments p { color: var(--muted); }
-.stock-card { min-height: 132px; padding: 15px; border: 1px solid var(--line); border-radius: 13px; display: grid; grid-template-columns: 1fr auto; gap: 8px; position: relative; }
+.stock-card { min-height: 132px; padding: 15px; border: 1px solid var(--line); border-radius: 13px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .stock-card h3 { font-size: 14px; margin-bottom: 5px; }
 .stock-card p { font-size: 11px; color: var(--muted); margin: 0; }
-.stock-card .delete { position: absolute; right: 5px; bottom: 5px; }
 .stock-value { align-self: center; text-align: right; padding-right: 3px; }
 .stock-value strong { display: block; font: 800 25px 'Manrope', sans-serif; }
 .stock-value span { color: var(--muted); font-size: 11px; }
 .stock-low { border-color: #e3b2a4; background: #fff8f5; }
 .low-label { color: #a84c35; background: #f5ddd6; width: max-content; padding: 3px 7px; border-radius: 5px; font-size: 10px; font-weight: 800; }
-.quantity-controls { display: flex; gap: 5px; align-self: end; }
-.quantity-controls button { width: 28px; height: 27px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--ink); font-weight: 800; }
+.stock-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 5px; }
+.stock-actions { display: flex; align-items: center; gap: 8px; }
+.quantity-controls { display: flex; gap: 6px; }
+.quantity-controls button, .stock-delete { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px; background: white; font-weight: 800; }
+.quantity-controls button { color: var(--ink); }
 .quantity-controls button:hover { border-color: var(--green); color: var(--green); }
+.stock-delete { color: #a95c4e; border-color: #e5cac4; }
+.stock-delete:hover { color: #8d392b; background: #fff1ed; border-color: #dba99e; }
 .empty-card { padding: 30px; color: var(--muted); font-size: 13px; }
+.shopping-content { padding: 20px 23px 23px; display: grid; gap: 20px; }
+.shopping-apartment { display: grid; gap: 10px; }
+.shopping-apartment > .apartment-badge { font-weight: 800; }
+.shopping-apartment > div { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.shopping-apartment article { padding: 12px 13px; display: flex; justify-content: space-between; align-items: center; gap: 15px; border-bottom: 1px solid #ecece7; }
+.shopping-apartment article:last-child { border-bottom: 0; }
+.shopping-apartment article strong { font-size: 13px; }
+.shopping-apartment article small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+.shopping-apartment article > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.shopping-apartment article > span strong { color: var(--ink); font-size: 16px; }
 .error { background: #fff2ee; color: #9d402d; border: 1px solid #e4b6aa; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 9px; margin-bottom: 18px; font-size: 13px; }
 .error span { flex: 1; }
 .error button { border: 0; background: transparent; color: inherit; }
@@ -195,6 +211,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .legend { margin-top: 4px; display: grid; gap: 3px; }
   .month-controls button:nth-child(2) { display: none; }
   .form-row { grid-template-columns: 1fr; }
+  .section-title { align-items: stretch; flex-direction: column; gap: 12px; }
+  .section-title-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .section-title-actions button { min-width: 0; padding-inline: 10px; }
   .week-calendar { display: block; min-height: 0; }
   .week-day { padding: 12px 14px; border-right: 0; border-bottom: 1px solid #ecece7; display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
   .week-day:last-child { border-bottom: 0; }
@@ -214,6 +233,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .mobile-booking-top strong { display: block; margin-bottom: 6px; }
   .mobile-bookings p { margin: 10px 0 3px; font-size: 12px; }
   .mobile-bookings > article > small { color: var(--muted); }
+  .quantity-controls button, .stock-delete { width: 44px; height: 44px; border-radius: 11px; }
+  .stock-actions { gap: 10px; }
+  .shopping-apartment article { align-items: flex-start; }
   .cleaning-card { grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
   .cleaning-order { width: 30px; height: 30px; }
   .cleaning-meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 7px 12px; }
@@ -225,4 +247,5 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .stat:last-child { grid-column: auto; }
   .stat { padding: 13px; }
   .day { min-height: 58px; }
+  .section-title-actions { grid-template-columns: 1fr; }
 }
