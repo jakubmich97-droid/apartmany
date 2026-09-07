@@ -15,6 +15,7 @@ import {
   Plus,
   Pencil,
   ReceiptText,
+  RotateCcw,
   ShoppingCart,
   Trash2,
   Users,
@@ -187,6 +188,16 @@ function App() {
     }
   }
 
+  async function undoCleaning(booking: Booking) {
+    setBookings((items) => items.map((item) => item.id === booking.id ? { ...item, cleaning_completed_at: null } : item))
+    if (!supabase) return
+    const { error: updateError } = await supabase.from('bookings').update({ cleaning_completed_at: null }).eq('id', booking.id)
+    if (updateError) {
+      setError(updateError.message)
+      await loadData()
+    }
+  }
+
   function closeModal() {
     setModal(null)
     setEditingBooking(null)
@@ -227,7 +238,7 @@ function App() {
         {error && <div className="error"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {loading ? <div className="center-state">Načítám data…</div> : (
           <>
-            {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} month={dashboardMonth} setMonth={setDashboardMonth} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} onComplete={completeCleaning} />}
+            {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} month={dashboardMonth} setMonth={setDashboardMonth} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} onComplete={completeCleaning} onUndo={undoCleaning} />}
             {page === 'calendar' && <CalendarPage week={calendarDate} setWeek={setCalendarDate} apartments={apartments} bookings={bookings} remove={remove} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
             {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
@@ -294,12 +305,13 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return <button className={active ? 'nav-active' : ''} onClick={onClick}>{icon}{label}</button>
 }
 
-function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onEdit, onComplete }: { day: Date; setDay: (day: Date) => void; month: Date; setMonth: (month: Date) => void; apartments: Apartment[]; bookings: Booking[]; onEdit: (booking: Booking) => void; onComplete: (booking: Booking) => void }) {
+function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onEdit, onComplete, onUndo }: { day: Date; setDay: (day: Date) => void; month: Date; setMonth: (month: Date) => void; apartments: Apartment[]; bookings: Booking[]; onEdit: (booking: Booking) => void; onComplete: (booking: Booking) => void; onUndo: (booking: Booking) => void }) {
   const dayKey = format(day, 'yyyy-MM-dd')
-  const arrivals = bookings.filter((booking) => booking.date_from === dayKey && !booking.cleaning_completed_at)
-  const tomorrowKey = format(addDays(day, 1), 'yyyy-MM-dd')
-  const tomorrowCount = bookings.filter((booking) => booking.date_from === tomorrowKey).length
-  const todayKey = format(new Date(), 'yyyy-MM-dd')
+  const allArrivals = bookings.filter((booking) => booking.date_from === dayKey)
+  const departures = bookings.filter((booking) => booking.date_to === dayKey)
+  const pendingArrivals = allArrivals.filter((booking) => !booking.cleaning_completed_at)
+  const completedArrivals = allArrivals.filter((booking) => Boolean(booking.cleaning_completed_at))
+  const turnovers = allArrivals.filter((arrival) => departures.some((departure) => departure.apartment_id === arrival.apartment_id))
   const monthBookings = bookings.filter((booking) => isSameMonth(parseISO(booking.date_from), month))
   const completedCleanings = monthBookings.filter((booking) => Boolean(booking.cleaning_completed_at)).length
   const monthApartmentCount = new Set(monthBookings.map((booking) => booking.apartment_id)).size
@@ -311,22 +323,29 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
       <button onClick={() => setDay(addDays(day, 1))}><ChevronRight size={19} /></button>
     </section>
     {!isToday && <button className="today-link" onClick={() => setDay(new Date())}>Vrátit se na dnešek</button>}
-    <section className="stats-grid">
-      <Stat icon={<House />} label="Apartmánů k úklidu" value={String(arrivals.length)} />
-      <Stat icon={<Users />} label="Přijíždějících hostů" value={String(arrivals.reduce((sum, booking) => sum + booking.guest_count, 0))} />
-      <Stat icon={<CalendarDays />} label="Příjezdy následující den" value={String(tomorrowCount)} />
+    <section className="stats-grid dashboard-stats">
+      <Stat icon={<House />} label="Úklidy čekají" value={String(pendingArrivals.length)} />
+      <Stat icon={<Users />} label="Příjezdy" value={String(allArrivals.length)} />
+      <Stat icon={<LogOut />} label="Odjezdy" value={String(departures.length)} />
+      <Stat icon={<RotateCcw />} label="Obratové úklidy" value={String(turnovers.length)} warning={turnovers.length > 0} />
+    </section>
+    <section className="movement-grid">
+      <MovementPanel title="Příjezdy" type="arrival" bookings={allArrivals} apartments={apartments} />
+      <MovementPanel title="Odjezdy" type="departure" bookings={departures} apartments={apartments} />
     </section>
     <section className="panel cleaning-panel">
-      <div className="panel-head"><div><p className="eyebrow">PLÁN ÚKLIDU</p><h2>{arrivals.length ? `Připravit ${arrivals.length} ${arrivals.length === 1 ? 'apartmán' : arrivals.length < 5 ? 'apartmány' : 'apartmánů'}` : 'Žádný úklid před příjezdem'}</h2></div></div>
-      {arrivals.length ? <div className="cleaning-list">{arrivals.map((booking, index) => {
+      <div className="panel-head"><div><p className="eyebrow">PLÁN ÚKLIDU</p><h2>{pendingArrivals.length ? `Čeká ${pendingArrivals.length} ${pendingArrivals.length === 1 ? 'úklid' : pendingArrivals.length < 5 ? 'úklidy' : 'úklidů'}` : 'Všechny úklidy jsou hotové'}</h2></div></div>
+      {pendingArrivals.length ? <div className="cleaning-list">{pendingArrivals.map((booking, index) => {
         const apartment = apartments.find((item) => item.id === booking.apartment_id)
-        return <article className="cleaning-card" key={booking.id} style={{ '--apt': apartment?.color ?? '#667' } as React.CSSProperties}>
+        const departure = departures.find((item) => item.apartment_id === booking.apartment_id)
+        return <article className={`cleaning-card ${departure ? 'turnover-cleaning' : ''}`} key={booking.id} style={{ '--apt': apartment?.color ?? '#667' } as React.CSSProperties}>
           <span className="cleaning-order">{index + 1}</span>
-          <div className="cleaning-main"><div className="cleaning-title"><MapPin size={18} /><h3>{apartment?.name ?? 'Neznámý apartmán'}</h3></div><p>Připravit před příjezdem hosta <strong>{booking.guest_name}</strong></p>{booking.note && <small>{booking.note}</small>}</div>
+          <div className="cleaning-main"><div className="cleaning-title"><MapPin size={18} /><h3>{apartment?.name ?? 'Neznámý apartmán'}</h3>{departure && <span className="turnover-badge">Obrat</span>}</div>{departure ? <p>Odjíždí <strong>{departure.guest_name}</strong> → přijíždí <strong>{booking.guest_name}</strong></p> : <p>Připravit před příjezdem hosta <strong>{booking.guest_name}</strong></p>}{booking.note && <small>{booking.note}</small>}</div>
           <div className="cleaning-meta"><span><Users size={15} /> {booking.guest_count} {booking.guest_count === 1 ? 'host' : 'hosté'}</span><span><CalendarDays size={15} /> {nights(booking.date_from, booking.date_to)} nocí</span><span>{booking.source}</span></div>
           <div className="cleaning-actions"><button className="secondary cleaning-edit" onClick={() => onEdit(booking)}><Pencil size={15} /> Upravit</button><button className="primary cleaning-done" onClick={() => onComplete(booking)}><Check size={16} /> Hotovo</button></div>
         </article>
-      })}</div> : <div className="empty-cleaning"><span className="brand-mark large"><House size={27} /></span><h3>Pro tento den nic nezačíná</h3><p>V žádném apartmánu není naplánovaný nový příjezd.</p></div>}
+      })}</div> : <div className="empty-cleaning"><span className="brand-mark large"><Check size={27} /></span><h3>{allArrivals.length ? 'Úklidy dokončeny' : 'Pro tento den není naplánovaný úklid'}</h3><p>{allArrivals.length ? 'Všechny apartmány před příjezdem jsou připravené.' : 'V žádném apartmánu nezačíná nová rezervace.'}</p></div>}
+      {completedArrivals.length > 0 && <div className="completed-cleanings"><h3>Dokončené úklidy</h3>{completedArrivals.map((booking) => { const apartment = apartments.find((item) => item.id === booking.apartment_id); return <div key={booking.id}><span><Check size={16} /><strong>{apartment?.name ?? 'Apartmán'}</strong><small>{booking.guest_name}</small></span><button className="text-button" onClick={() => onUndo(booking)}><RotateCcw size={14} /> Vrátit</button></div>})}</div>}
     </section>
     <section className="monthly-overview">
       <div className="month-overview-head panel">
@@ -343,6 +362,10 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
       </div>
     </section>
   </div>
+}
+
+function MovementPanel({ title, type, bookings, apartments }: { title: string; type: 'arrival' | 'departure'; bookings: Booking[]; apartments: Apartment[] }) {
+  return <section className={`panel movement-panel ${type}`}><div className="panel-head"><div><p className="eyebrow">{type === 'arrival' ? 'CHECK-IN' : 'CHECK-OUT'}</p><h2>{title} <span>{bookings.length}</span></h2></div></div>{bookings.length ? <div>{bookings.map((booking) => <article key={booking.id}><ApartmentBadge apartment={apartments.find((apartment) => apartment.id === booking.apartment_id)} /><strong>{booking.guest_name}</strong><small>{booking.guest_count} {booking.guest_count === 1 ? 'host' : 'hosté'} · {booking.source}</small></article>)}</div> : <p className="movement-empty">Žádné {type === 'arrival' ? 'příjezdy' : 'odjezdy'}.</p>}</section>
 }
 
 function CalendarPage({ week, setWeek, apartments, bookings, remove, onEdit }: { week: Date; setWeek: (d: Date) => void; apartments: Apartment[]; bookings: Booking[]; remove: (table: string, id: string) => void; onEdit: (booking: Booking) => void }) {
