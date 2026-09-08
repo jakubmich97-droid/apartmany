@@ -367,7 +367,7 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
   </div>
 }
 
-const vapidPublicKey = 'BKXUVeA2f_mhEIFDkyaGVvLWzsS7G4ZFDAo0qTLQmWmXk53kpeI4Wa8JIorxIcGjnmj21MmUYU13gYPK6dC6sak'
+const vapidPublicKey = 'BAMdkkMHLF2if6v33P92dheoBePoaYviUAoc6tmQk3iY_iojhyw4C_N1Nbfd9nmPLyJ4Kqt_cX0IfB0C6D8WFUs'
 
 function urlBase64ToUint8Array(value: string) {
   const padding = '='.repeat((4 - value.length % 4) % 4)
