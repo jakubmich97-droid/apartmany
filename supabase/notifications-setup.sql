@@ -13,6 +13,8 @@ create table if not exists public.push_subscriptions (
   p256dh text not null,
   auth text not null,
   timezone text not null default 'Europe/Prague',
+  morning_time time not null default '07:00',
+  evening_time time not null default '18:00',
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -44,7 +46,7 @@ where not exists (select 1 from vault.decrypted_secrets where name = 'service_ro
 select cron.unschedule(jobid) from cron.job where jobname = 'cleaning-push-notifications';
 select cron.schedule(
   'cleaning-push-notifications',
-  '0 * * * *',
+  '*/15 * * * *',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/send-cleaning-notifications',

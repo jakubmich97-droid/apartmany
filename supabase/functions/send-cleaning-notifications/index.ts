@@ -15,10 +15,10 @@ webpush.setVapidDetails(
 function localParts(timezone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date())
   const get = (type: string) => parts.find((part) => part.type === type)?.value || ''
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) }
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
 }
 
 function nextDate(date: string) {
@@ -34,7 +34,7 @@ Deno.serve(async () => {
 
   for (const subscription of subscriptions || []) {
     const local = localParts(subscription.timezone || 'Europe/Prague')
-    const notificationType = local.hour === 7 ? 'morning' : local.hour === 18 ? 'evening' : null
+    const notificationType = local.time === String(subscription.morning_time || '07:00').slice(0, 5) ? 'morning' : local.time === String(subscription.evening_time || '18:00').slice(0, 5) ? 'evening' : null
     if (!notificationType) continue
     const targetDate = notificationType === 'morning' ? local.date : nextDate(local.date)
 

@@ -317,6 +317,18 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
   const monthBookings = bookings.filter((booking) => isSameMonth(parseISO(booking.date_from), month))
   const completedCleanings = monthBookings.filter((booking) => Boolean(booking.cleaning_completed_at)).length
   const monthApartmentCount = new Set(monthBookings.map((booking) => booking.apartment_id)).size
+  const monthStart = startOfMonth(month)
+  const monthAfterEnd = addDays(endOfMonth(month), 1)
+  const daysInMonth = endOfMonth(month).getDate()
+  const apartmentOccupancy = apartments.map((apartment) => {
+    const occupiedDays = new Set<string>()
+    bookings.filter((booking) => booking.apartment_id === apartment.id).forEach((booking) => {
+      let cursor = parseISO(booking.date_from) > monthStart ? parseISO(booking.date_from) : monthStart
+      const checkout = parseISO(booking.date_to) < monthAfterEnd ? parseISO(booking.date_to) : monthAfterEnd
+      while (cursor < checkout) { occupiedDays.add(format(cursor, 'yyyy-MM-dd')); cursor = addDays(cursor, 1) }
+    })
+    return { apartment, nights: occupiedDays.size, percent: Math.round(occupiedDays.size / daysInMonth * 100) }
+  })
   const isToday = isSameDay(day, new Date())
   return <div className="content-stack">
     <NotificationSettings />
@@ -363,6 +375,7 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
         <Stat icon={<Users />} label="Hostů v měsíci" value={String(monthBookings.reduce((sum, booking) => sum + booking.guest_count, 0))} />
         <Stat icon={<Building2 />} label="Využitých apartmánů" value={String(monthApartmentCount)} />
       </div>
+      <section className="panel occupancy-panel"><div className="panel-head"><div><p className="eyebrow">VYTÍŽENÍ APARTMÁNŮ</p><h2>Obsazenost v měsíci</h2></div></div><div className="occupancy-list">{apartmentOccupancy.map(({ apartment, nights: occupiedNights, percent }) => <article key={apartment.id}><div><ApartmentBadge apartment={apartment} /><strong>{percent} %</strong></div><div className="occupancy-track"><span style={{ width: `${Math.min(100, percent)}%`, background: apartment.color }} /></div><small>{occupiedNights} z {daysInMonth} nocí</small></article>)}</div></section>
     </section>
   </div>
 }
@@ -380,10 +393,18 @@ function NotificationSettings() {
   const [enabled, setEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [morningTime, setMorningTime] = useState('07:00')
+  const [eveningTime, setEveningTime] = useState('18:00')
 
   useEffect(() => {
     if (permission === 'unsupported') return
-    navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then((subscription) => setEnabled(Boolean(subscription))).catch(() => setEnabled(false))
+    navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then(async (subscription) => {
+      setEnabled(Boolean(subscription))
+      if (!subscription || !supabase) return
+      const { data } = await supabase.from('push_subscriptions').select('morning_time,evening_time').eq('endpoint', subscription.endpoint).maybeSingle()
+      if (data?.morning_time) setMorningTime(String(data.morning_time).slice(0, 5))
+      if (data?.evening_time) setEveningTime(String(data.evening_time).slice(0, 5))
+    }).catch(() => setEnabled(false))
   }, [permission])
 
   async function enableNotifications() {
@@ -402,9 +423,11 @@ function NotificationSettings() {
         auth: json.keys?.auth,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Prague',
         enabled: true,
+        morning_time: morningTime,
+        evening_time: eveningTime,
       }, { onConflict: 'endpoint' })
       if (error) throw error
-      setEnabled(true); setMessage('Hotovo. Upozornění budou chodit ráno v 7:00 a večer v 18:00.')
+      setEnabled(true); setMessage('Hotovo. Časy upozornění můžete kdykoliv změnit.')
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : 'Notifikace se nepodařilo zapnout.')
     } finally { setSaving(false) }
@@ -423,8 +446,20 @@ function NotificationSettings() {
     } catch { setMessage('Notifikace se nepodařilo vypnout.') } finally { setSaving(false) }
   }
 
+  async function saveNotificationTimes() {
+    setSaving(true); setMessage('')
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+      if (!subscription) throw new Error('Telefon není přihlášený k notifikacím.')
+      const { error } = await supabase!.from('push_subscriptions').update({ morning_time: morningTime, evening_time: eveningTime }).eq('endpoint', subscription.endpoint)
+      if (error) throw error
+      setMessage('Časy notifikací jsou uložené.')
+    } catch (caught) { setMessage(caught instanceof Error ? caught.message : 'Časy se nepodařilo uložit.') } finally { setSaving(false) }
+  }
+
   if (permission === 'unsupported') return <section className="notification-card panel"><BellOff size={22} /><div><h3>Notifikace nejsou dostupné</h3><p>Na iPhonu otevřete aplikaci z ikony přidané na plochu.</p></div></section>
-  return <section className={`notification-card panel ${enabled ? 'notification-enabled' : ''}`}><span className="notification-icon">{enabled ? <Bell size={22} /> : <BellOff size={22} />}</span><div><h3>{enabled ? 'Notifikace jsou zapnuté' : 'Upozornění na úklidy'}</h3><p>{enabled ? 'V 7:00 dnešní plán a v 18:00 plán na zítřek.' : 'Nechte si připomenout dnešní a zítřejší úklidy.'}</p>{message && <small>{message}</small>}</div><button className={enabled ? 'secondary' : 'primary'} disabled={saving} onClick={enabled ? disableNotifications : enableNotifications}>{saving ? 'Čekejte…' : enabled ? 'Vypnout' : 'Zapnout'}</button></section>
+  return <section className={`notification-card panel ${enabled ? 'notification-enabled' : ''}`}><span className="notification-icon">{enabled ? <Bell size={22} /> : <BellOff size={22} />}</span><div><h3>{enabled ? 'Notifikace jsou zapnuté' : 'Upozornění na úklidy'}</h3><p>{enabled ? `V ${morningTime} dnešní plán a v ${eveningTime} plán na zítřek.` : 'Nechte si připomenout dnešní a zítřejší úklidy.'}</p>{enabled && <div className="notification-times"><label>Dnešní plán<input type="time" step="900" value={morningTime} onChange={(event) => setMorningTime(event.target.value)} /></label><label>Plán na zítřek<input type="time" step="900" value={eveningTime} onChange={(event) => setEveningTime(event.target.value)} /></label><button className="secondary" disabled={saving} onClick={saveNotificationTimes}>Uložit časy</button></div>}{message && <small>{message}</small>}</div><button className={enabled ? 'secondary' : 'primary'} disabled={saving} onClick={enabled ? disableNotifications : enableNotifications}>{saving ? 'Čekejte…' : enabled ? 'Vypnout' : 'Zapnout'}</button></section>
 }
 
 function MovementPanel({ title, type, bookings, apartments }: { title: string; type: 'arrival' | 'departure'; bookings: Booking[]; apartments: Apartment[] }) {
