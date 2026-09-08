@@ -9,4 +9,4 @@
 4. V souboru `notifications-setup.sql` nahraďte `VLOZTE_SERVICE_ROLE_KEY` tímto klíčem a celý SQL spusťte v SQL Editoru.
 5. Po novém načtení aplikace stiskněte na úvodní stránce **Zapnout**.
 
-Plánovač běží každou hodinu, ale upozornění odešle jen v 7:00 a 18:00 místního času. Díky tomu správně funguje i změna zimního a letního času.
+Plánovač kontroluje nastavení každou minutu, ale každý typ upozornění odešle nejvýše jednou denně. Časy lze změnit přímo v aplikaci a správně funguje i změna zimního a letního času.

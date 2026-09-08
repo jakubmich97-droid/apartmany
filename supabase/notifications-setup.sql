@@ -46,7 +46,7 @@ where not exists (select 1 from vault.decrypted_secrets where name = 'service_ro
 select cron.unschedule(jobid) from cron.job where jobname = 'cleaning-push-notifications';
 select cron.schedule(
   'cleaning-push-notifications',
-  '*/15 * * * *',
+  '* * * * *',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/send-cleaning-notifications',
