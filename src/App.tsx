@@ -320,6 +320,9 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
   const monthStart = startOfMonth(month)
   const monthAfterEnd = addDays(endOfMonth(month), 1)
   const daysInMonth = endOfMonth(month).getDate()
+  const currentMonthSelected = isSameMonth(month, new Date())
+  const todayKey = format(new Date(), 'yyyy-MM-dd')
+  const elapsedNights = currentMonthSelected ? Math.max(0, new Date().getDate() - 1) : 0
   const apartmentOccupancy = apartments.map((apartment) => {
     const occupiedDays = new Set<string>()
     bookings.filter((booking) => booking.apartment_id === apartment.id).forEach((booking) => {
@@ -327,7 +330,14 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
       const checkout = parseISO(booking.date_to) < monthAfterEnd ? parseISO(booking.date_to) : monthAfterEnd
       while (cursor < checkout) { occupiedDays.add(format(cursor, 'yyyy-MM-dd')); cursor = addDays(cursor, 1) }
     })
-    return { apartment, nights: occupiedDays.size, percent: Math.round(occupiedDays.size / daysInMonth * 100) }
+    const occupiedToDate = currentMonthSelected ? Array.from(occupiedDays).filter((date) => date < todayKey).length : 0
+    return {
+      apartment,
+      nights: occupiedDays.size,
+      percent: Math.round(occupiedDays.size / daysInMonth * 100),
+      occupiedToDate,
+      percentToDate: elapsedNights ? Math.round(occupiedToDate / elapsedNights * 100) : 0,
+    }
   })
   const isToday = isSameDay(day, new Date())
   return <div className="content-stack">
@@ -375,7 +385,7 @@ function DashboardPage({ day, setDay, month, setMonth, apartments, bookings, onE
         <Stat icon={<Users />} label="Hostů v měsíci" value={String(monthBookings.reduce((sum, booking) => sum + booking.guest_count, 0))} />
         <Stat icon={<Building2 />} label="Využitých apartmánů" value={String(monthApartmentCount)} />
       </div>
-      <section className="panel occupancy-panel"><div className="panel-head"><div><p className="eyebrow">VYTÍŽENÍ APARTMÁNŮ</p><h2>Obsazenost v měsíci</h2></div></div><div className="occupancy-list">{apartmentOccupancy.map(({ apartment, nights: occupiedNights, percent }) => <article key={apartment.id}><div><ApartmentBadge apartment={apartment} /><strong>{percent} %</strong></div><div className="occupancy-track"><span style={{ width: `${Math.min(100, percent)}%`, background: apartment.color }} /></div><small>{occupiedNights} z {daysInMonth} nocí</small></article>)}</div></section>
+      <section className="panel occupancy-panel"><div className="panel-head"><div><p className="eyebrow">VYTÍŽENÍ APARTMÁNŮ</p><h2>Obsazenost v měsíci</h2></div></div><div className="occupancy-list">{apartmentOccupancy.map(({ apartment, nights: occupiedNights, percent, occupiedToDate, percentToDate }) => <article key={apartment.id}><div className="occupancy-heading"><ApartmentBadge apartment={apartment} /><strong>{percent} %</strong></div><div className="occupancy-track"><span style={{ width: `${Math.min(100, percent)}%`, background: apartment.color }} /></div><small>{occupiedNights} z {daysInMonth} nocí za celý měsíc</small>{currentMonthSelected && <div className="occupancy-to-date"><span>K dnešku</span><strong>{percentToDate} %</strong><small>{occupiedToDate} z {elapsedNights} uplynulých nocí</small></div>}</article>)}</div></section>
     </section>
   </div>
 }
