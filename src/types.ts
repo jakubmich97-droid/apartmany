@@ -24,7 +24,7 @@ export type Expense = {
   amount: number
   spent_on: string
   note: string | null
-  paid_from_account: boolean
+  reimbursed: boolean
 }
 
 export type InventoryItem = {

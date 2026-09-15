@@ -39,11 +39,11 @@ create table if not exists public.expenses (
   amount numeric(12,2) not null check (amount >= 0),
   spent_on date not null default current_date,
   note text,
-  paid_from_account boolean not null default false,
+  reimbursed boolean not null default false,
   created_at timestamptz not null default now()
 );
 
-alter table public.expenses add column if not exists paid_from_account boolean not null default false;
+alter table public.expenses add column if not exists reimbursed boolean not null default false;
 
 create table if not exists public.inventory_items (
   id uuid primary key default gen_random_uuid(),
