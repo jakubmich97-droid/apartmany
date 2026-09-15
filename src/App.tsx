@@ -112,7 +112,12 @@ function App() {
         const fallback = await supabase.from('bookings').select('id,apartment_id,guest_name,guest_count,date_from,date_to,source,note').order('date_from')
         return { ...fallback, data: fallback.data?.map((booking) => ({ ...booking, cleaning_completed_at: null })) ?? null }
       })(),
-      supabase.from('expenses').select('id,apartment_id,category,description,amount,spent_on,note').order('spent_on', { ascending: false }),
+      (async () => {
+        const result = await supabase.from('expenses').select('id,apartment_id,category,description,amount,spent_on,note,paid_from_account').order('spent_on', { ascending: false })
+        if (result.error?.code !== '42703') return result
+        const fallback = await supabase.from('expenses').select('id,apartment_id,category,description,amount,spent_on,note').order('spent_on', { ascending: false })
+        return { ...fallback, data: fallback.data?.map((expense) => ({ ...expense, paid_from_account: false })) ?? null }
+      })(),
       supabase.from('inventory_items').select('id,apartment_id,name,quantity,unit,minimum_quantity,updated_at').order('name'),
     ])
     const firstError = [a.error, b.error, e.error, i.error].find(Boolean)
@@ -160,6 +165,17 @@ function App() {
     const { error: updateError } = await supabase.from('inventory_items').update({ quantity }).eq('id', id)
     if (updateError) {
       setError(updateError.message)
+      await loadData()
+    }
+  }
+
+  async function toggleExpensePayment(expense: Expense) {
+    const paidFromAccount = !expense.paid_from_account
+    setExpenses((items) => items.map((item) => item.id === expense.id ? { ...item, paid_from_account: paidFromAccount } : item))
+    if (!supabase) return
+    const { error: updateError } = await supabase.from('expenses').update({ paid_from_account: paidFromAccount }).eq('id', expense.id)
+    if (updateError) {
+      setError(updateError.code === '42703' ? 'Nejdřív spusťte databázovou aktualizaci pro způsob úhrady výdajů.' : updateError.message)
       await loadData()
     }
   }
@@ -243,7 +259,7 @@ function App() {
             {page === 'dashboard' && <DashboardPage day={dashboardDate} setDay={setDashboardDate} month={dashboardMonth} setMonth={setDashboardMonth} apartments={apartments} bookings={bookings} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} onComplete={completeCleaning} onUndo={undoCleaning} />}
             {page === 'calendar' && <CalendarPage week={calendarDate} setWeek={setCalendarDate} apartments={apartments} bookings={bookings} remove={remove} onEdit={(booking) => { setEditingBooking(booking); setModal('booking') }} />}
             {page === 'apartments' && <ApartmentsPage apartments={apartments} bookings={bookings} expenses={expenses} inventory={inventory} onAdd={() => setModal('apartment')} />}
-            {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} />}
+            {page === 'expenses' && <ExpensesPage expenses={expenses} apartments={apartments} remove={remove} togglePayment={toggleExpensePayment} />}
             {page === 'inventory' && <InventoryPage inventory={inventory} apartments={apartments} remove={remove} changeQuantity={changeInventory} onEdit={(item) => { setEditingInventory(item); setModal('inventory') }} onAddApartment={() => setModal('apartment')} onShoppingList={() => setShoppingListOpen(true)} />}
           </>
         )}
@@ -499,10 +515,10 @@ function CalendarPage({ week, setWeek, apartments, bookings, remove, onEdit }: {
   </div>
 }
 
-function ExpensesPage({ expenses, apartments, remove }: { expenses: Expense[]; apartments: Apartment[]; remove: (table: string, id: string) => void }) {
+function ExpensesPage({ expenses, apartments, remove, togglePayment }: { expenses: Expense[]; apartments: Apartment[]; remove: (table: string, id: string) => void; togglePayment: (expense: Expense) => void }) {
   const current = expenses.filter((e) => isSameMonth(parseISO(e.spent_on), new Date()))
   const byCategory = useMemo(() => Object.entries(current.reduce<Record<string, number>>((acc, e) => ({ ...acc, [e.category]: (acc[e.category] ?? 0) + Number(e.amount) }), {})).sort((a, b) => b[1] - a[1]), [current])
-  return <div className="content-stack"><section className="stats-grid"><Stat icon={<WalletCards />} label="Tento měsíc" value={money.format(current.reduce((s, e) => s + Number(e.amount), 0))} /><Stat icon={<ReceiptText />} label="Počet výdajů" value={String(current.length)} /><Stat icon={<BedDouble />} label="Nejvyšší kategorie" value={byCategory[0]?.[0] ?? '—'} /></section><section className="panel"><div className="panel-head"><div><h2>Přehled výdajů</h2><p>Seřazeno od nejnovějších</p></div></div><div className="table-wrap"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Apartmán</th><th>Částka</th><th></th></tr></thead><tbody>{expenses.length ? expenses.map((e) => <tr key={e.id}><td>{format(parseISO(e.spent_on), 'd. M. yyyy')}</td><td><strong>{e.description}</strong>{e.note && <small>{e.note}</small>}</td><td><span className="category">{e.category}</span></td><td>{e.apartment_id ? <ApartmentBadge apartment={apartments.find((a) => a.id === e.apartment_id)} /> : 'Společné'}</td><td className="amount">{money.format(e.amount)}</td><td><button className="delete" onClick={() => remove('expenses', e.id)}><Trash2 size={16} /></button></td></tr>) : <EmptyRow columns={6} text="Zatím tu nejsou žádné výdaje." />}</tbody></table></div></section></div>
+  return <div className="content-stack"><section className="stats-grid"><Stat icon={<WalletCards />} label="Tento měsíc" value={money.format(current.reduce((s, e) => s + Number(e.amount), 0))} /><Stat icon={<ReceiptText />} label="Počet výdajů" value={String(current.length)} /><Stat icon={<BedDouble />} label="Nejvyšší kategorie" value={byCategory[0]?.[0] ?? '—'} /></section><section className="panel"><div className="panel-head"><div><h2>Přehled výdajů</h2><p>Seřazeno od nejnovějších</p></div></div><div className="table-wrap"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Apartmán</th><th>Částka</th><th>Úhrada</th><th></th></tr></thead><tbody>{expenses.length ? expenses.map((e) => <tr key={e.id}><td>{format(parseISO(e.spent_on), 'd. M. yyyy')}</td><td><strong>{e.description}</strong>{e.note && <small>{e.note}</small>}</td><td><span className="category">{e.category}</span></td><td>{e.apartment_id ? <ApartmentBadge apartment={apartments.find((a) => a.id === e.apartment_id)} /> : 'Společné'}</td><td className="amount">{money.format(e.amount)}</td><td><button className={`expense-payment ${e.paid_from_account ? 'paid' : ''}`} onClick={() => togglePayment(e)}>{e.paid_from_account && <Check size={15} />}{e.paid_from_account ? 'Z účtu' : 'Hotově'}</button></td><td><button className="delete" onClick={() => remove('expenses', e.id)}><Trash2 size={16} /></button></td></tr>) : <EmptyRow columns={7} text="Zatím tu nejsou žádné výdaje." />}</tbody></table></div></section></div>
 }
 
 function ApartmentsPage({ apartments, bookings, expenses, inventory, onAdd }: { apartments: Apartment[]; bookings: Booking[]; expenses: Expense[]; inventory: InventoryItem[]; onAdd: () => void }) {
@@ -567,7 +583,7 @@ function EntryModal({ kind, apartments, editingBooking, editingInventory, onClos
     let table = ''
     let payload: Record<string, unknown> | Record<string, unknown>[] = {}
     if (kind === 'booking') { table = 'bookings'; payload = { ...data, guest_count: Number(data.guest_count), note: data.note || null } }
-    if (kind === 'expense') { table = 'expenses'; payload = { ...data, apartment_id: data.apartment_id || null, amount: Number(data.amount), note: data.note || null } }
+    if (kind === 'expense') { table = 'expenses'; payload = { ...data, apartment_id: data.apartment_id || null, amount: Number(data.amount), note: data.note || null, paid_from_account: data.paid_from_account === 'on' } }
     if (kind === 'inventory') {
       table = 'inventory_items'
       const inventoryPayload = { ...data, quantity: Number(data.quantity), minimum_quantity: Number(data.minimum_quantity) }
@@ -588,7 +604,7 @@ function EntryModal({ kind, apartments, editingBooking, editingInventory, onClos
   }
   return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-head"><div><p className="eyebrow">PŘIDAT ZÁZNAM</p><h2>{titles[kind]}</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><form onSubmit={submit}>
     {kind === 'booking' && <><label>Jméno hosta<input required name="guest_name" autoFocus defaultValue={editingBooking?.guest_name ?? ''} /></label><div className="form-row"><label>Apartmán<SelectApartment apartments={apartments} required value={editingBooking?.apartment_id} /></label><label>Počet hostů<input required name="guest_count" type="number" min="1" defaultValue={editingBooking?.guest_count ?? 2} /></label></div><div className="form-row"><label>Příjezd<input required name="date_from" type="date" defaultValue={editingBooking?.date_from ?? today} /></label><label>Odjezd<input required name="date_to" type="date" defaultValue={editingBooking?.date_to ?? today} /></label></div><label>Zdroj<select name="source" defaultValue={editingBooking?.source ?? 'Booking.com'}><option>Booking.com</option><option>Airbnb</option><option>Přímá rezervace</option><option>Jiné</option></select></label><label>Poznámka<textarea name="note" rows={2} defaultValue={editingBooking?.note ?? ''} /></label></>}
-    {kind === 'expense' && <><label>Popis<input required name="description" autoFocus placeholder="Např. praní prádla" /></label><div className="form-row"><label>Částka (Kč)<input required name="amount" type="number" min="0" step="0.01" /></label><label>Datum<input required name="spent_on" type="date" defaultValue={today} /></label></div><div className="form-row"><label>Kategorie<select name="category"><option>Praní</option><option>Drogerie</option><option>Vybavení</option><option>Úklid</option><option>Opravy</option><option>Energie</option><option>Ostatní</option></select></label><label>Apartmán<SelectApartment apartments={apartments} allowShared /></label></div><label>Poznámka<textarea name="note" rows={2} /></label></>}
+    {kind === 'expense' && <><label>Popis<input required name="description" autoFocus placeholder="Např. praní prádla" /></label><div className="form-row"><label>Částka (Kč)<input required name="amount" type="number" min="0" step="0.01" /></label><label>Datum<input required name="spent_on" type="date" defaultValue={today} /></label></div><div className="form-row"><label>Kategorie<select name="category"><option>Praní</option><option>Drogerie</option><option>Vybavení</option><option>Úklid</option><option>Opravy</option><option>Energie</option><option>Ostatní</option></select></label><label>Apartmán<SelectApartment apartments={apartments} allowShared /></label></div><label className="check-label"><input name="paid_from_account" type="checkbox" /> Zaplaceno z účtu</label><label>Poznámka<textarea name="note" rows={2} /></label></>}
     {kind === 'inventory' && <>{apartments.length === 0 ? <div className="form-notice"><CircleAlert size={18} />Nejdřív přidejte alespoň jeden apartmán v sekci Apartmány.</div> : <><label>Název položky<input required name="name" autoFocus placeholder="Např. cukr" defaultValue={editingInventory?.name ?? ''} /></label><label>Apartmán<SelectApartment apartments={apartments} required value={editingInventory?.apartment_id} allowAll={!editingInventory} /></label><div className="form-row"><label>Aktuální počet<input required name="quantity" type="number" min="0" step="0.01" defaultValue={editingInventory?.quantity ?? 0} /></label><label>Jednotka<select name="unit" defaultValue={editingInventory?.unit ?? 'ks'}><option>ks</option><option>balení</option><option>lahví</option><option>kg</option><option>l</option></select></label></div><label>Upozornit při počtu<input required name="minimum_quantity" type="number" min="0" step="0.01" defaultValue={editingInventory?.minimum_quantity ?? 1} /></label></>}</>}
     {kind === 'apartment' && <><label>Název apartmánu<input required name="name" autoFocus placeholder="Např. Apartmán 1" /></label><label>Barva v kalendáři<input required name="color" type="color" defaultValue="#2f6f62" /></label></>}
     {formError && <p className="form-error">{formError}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Zrušit</button><button className="primary" disabled={saving || ((kind === 'booking' || kind === 'inventory') && apartments.length === 0)}>{saving ? 'Ukládám…' : (editingBooking && kind === 'booking') || (editingInventory && kind === 'inventory') ? 'Uložit změny' : 'Uložit'}</button></div>
